@@ -1,232 +1,233 @@
 # 3544-FRC-Toolkit
+
 Open-source FRC tooling monorepo for Team 3544.
-This repository contains the tools used to prototype, tune, diagnose, simulate, log, and drive Team 3544 robots.
+
+Tools to prototype, tune, diagnose, simulate, log, and drive Team 3544 robots.
+
+**Goal:** Make the robot faster to develop, easier to debug, easier to tune, and more reliable at competition.
+
 ---
-## Projects
-### `apps/dashboard`
-Vite + React dashboard used during matches, testing, simulation, and replay.
-**Modules:**
-- Driver dashboard
-- Power diagnostics
-- Simulation viewer
-- NetworkTables live viewer
-- Tunables panel
-- Match replay
-- Subsystem status
-- Fault viewer
----
-### `apps/code-generator`
-Python + Qt app that generates FRC robot boilerplate.
-**Generates:**
-- Command-based subsystems
-- State machines
-- Constants files
-- Tunable motor wrappers
-- Simulation hooks
-- Logging hooks
-- Health checks
----
-### `apps/robot-health`
-Python + Qt diagnostic app for pit checks and robot validation.
-**Checks:**
-- Battery voltage
-- CAN devices
-- Motor faults
-- Motor temperatures
-- Current draw
-- Encoders
-- Gyro
-- Vision
-- Pneumatics
-- Subsystem readiness
----
-### `apps/subsystem-tuner`
-Python + Qt app for tuning mechanisms.
-**Supports:**
-- Velocity PID
-- Position PID
-- Feedforward tuning
-- Step response testing
-- Motor templates
-- Gear reductions
-- CAD mass / inertia inputs
-- Encoder configuration
-- Starting PID recommendations
----
-## Packages
-### `packages/3544FRCLib`
-Reusable Java library for WPILib robot code.
-**Packages:**
-- `nt`
-- `logging`
-- `health`
-- `tuning`
-- `math`
-- `simulation`
-- `commands`
-- `state`
-- `power`
-**Example:**
-```java
-NTManager.logDouble("Shooter/TopRPM", shooter.getTopRPM());
-RobotHealth.checkBattery();
-RobotHealth.checkTalonFX("Shooter/TopMotor", topMotor);
+
+## Repository Structure
+
 ```
-⸻
+3544-FRC-Toolkit/
+├── apps/
+│   ├── dashboard/          Vite + React match/sim/replay dashboard
+│   ├── code-generator/     Python + Qt boilerplate generator
+│   ├── robot-health/       Python + Qt pit diagnostic app
+│   └── subsystem-tuner/    Python + Qt live mechanism tuner
+└── packages/
+    ├── 3544FRCLib/         Java WPILib library (robot-side)
+    ├── dashboard-core/     Shared TS logic (NT client, models)
+    ├── dashboard-ui/       Shared React components
+    ├── field-sim/          2D field & mechanism visualization
+    ├── power-diagnostics/  Power and current analysis logic
+    └── replay-engine/      NT recording and replay engine
+```
 
-## `packages/dashboard-core`
+Each part has its own `README.md` with full details.
 
-Shared TypeScript logic for the dashboard.
+---
 
-Includes:
+## Current Status
 
-* NetworkTables client wrapper
-* NT schema
-* Robot state model
-* Replay data model
-* Dashboard configuration system
-* Live/replay data abstraction
+The live-first dashboard path is implemented and wired to the sample robot simulation.
 
-⸻
+| Part | Status |
+|---|---|
+| `apps/dashboard` | Live React dashboard with overview, power, subsystems, tunables, health/faults, field simulation, NT live viewer, and replay JSON import |
+| `robot` | WPILib sample robot publishes the `/3544/` dashboard contract in simulation |
+| `packages/3544FRCLib` | Reusable NT, health, tunable metadata, dashboard publishing, and power publishing helpers |
+| `packages/dashboard-core` | Shared NT key schema, robot/replay models, and live/replay data source interfaces |
+| `packages/field-sim` | Field visualization is currently implemented inside `apps/dashboard`; package remains the future extraction target |
+| `packages/replay-engine` | Replay model/import path exists; full recording/export engine is still future work |
+| `packages/power-diagnostics` | Live power dashboard is implemented in `apps/dashboard`; package remains the future extraction target |
+| Python apps | Markdown specs exist; implementation is still future work |
 
-## `packages/dashboard-ui`
+---
 
-Shared React UI components.
+## Dependency Map
 
-Includes:
+Understanding what depends on what tells you what to build first.
 
-* Cards
-* Graphs
-* Warnings
-* Status badges
-* Mechanism widgets
-* Match timeline
-* Fault panels
-* Subsystem panels
+### Package dependencies (build these before the apps that need them)
 
-⸻
+```
+packages/3544FRCLib       — no internal dependencies (robot-side Java)
 
-## `packages/field-sim`
+packages/dashboard-core   — no internal dependencies
+packages/replay-engine    — depends on: dashboard-core
+packages/power-diagnostics — depends on: dashboard-core
+packages/field-sim        — depends on: dashboard-core
 
-2D field and mechanism visualization package.
+packages/dashboard-ui     — depends on: dashboard-core
 
-Shows:
+apps/dashboard            — depends on: dashboard-core
+                                         dashboard-ui
+                                         field-sim
+                                         power-diagnostics
+                                         replay-engine
 
-* Robot pose
-* Swerve modules
-* Turret angle
-* Shooter angle
-* Intake state
-* Robot path
-* Vision targets
-* Drive mode
+apps/code-generator       — no internal dependencies (standalone Python app)
+apps/robot-health         — no internal dependencies (standalone Python app)
+apps/subsystem-tuner      — no internal dependencies (standalone Python app)
+```
 
-⸻
+### Visual dependency graph
 
-## `packages/power-diagnostics`
+```
+dashboard-core ──┬──▶ replay-engine ────────┐
+                 ├──▶ power-diagnostics ─────┤
+                 ├──▶ field-sim ─────────────┤──▶ apps/dashboard
+                 └──▶ dashboard-ui ──────────┘
 
-Power analysis logic.
+3544FRCLib        ──▶ (robot project, not this monorepo)
 
-Tracks:
+code-generator    ──▶ (standalone)
+robot-health      ──▶ (standalone)
+subsystem-tuner   ──▶ (standalone)
+```
 
-* Battery voltage sag
-* Total current
-* Current per motor
-* Current per subsystem
-* PDH/PDP channels
-* Brownout risk
-* Energy usage
-* Current spikes
+---
 
-⸻
+## Build Order
 
-## `packages/replay-engine`
+If you are setting up the full monorepo from scratch, follow this order:
 
-NetworkTables recording and replay engine.
+### Step 1 — Core TypeScript foundation
+Build `packages/dashboard-core` first. Everything else in the TS stack depends on it.
 
-Features:
+### Step 2 — TS packages (can be built in parallel after step 1)
+- `packages/replay-engine`
+- `packages/power-diagnostics`
+- `packages/field-sim`
+- `packages/dashboard-ui`
 
-* Record complete NT timelines
-* Replay matches
-* Scrub timeline
-* Export logs
-* Compare live vs replay
-* Detect faults from replay
+### Step 3 — Dashboard app
+Build `apps/dashboard` after all packages are ready.
 
-⸻
+### Step 4 — Java library (independent, any time)
+`packages/3544FRCLib` is a self-contained Gradle project. Build and link it to your robot project independently of the TS stack.
 
-# Main Goal
+### Step 5 — Python apps (independent, any time)
+`apps/code-generator`, `apps/robot-health`, and `apps/subsystem-tuner` are standalone Python apps with no dependencies on the rest of this monorepo.
 
-Make the robot faster to develop, easier to debug, easier to tune, and more reliable at competition.
+---
 
-⸻
+## Development Setup
 
-# Recommended Workflow
+### Live Robot Simulation + Dashboard
 
-1. Generate subsystem boilerplate with code-generator
-2. Add subsystem to robot code using 3544FRCLib
-3. Tune the mechanism with subsystem-tuner
-4. Validate the robot with robot-health
-5. Drive and monitor with dashboard
-6. Replay match data after testing or competition
+Run the robot simulation and dashboard in two terminals.
 
-⸻
+Terminal 1:
 
-# Suggested NT Key Structure
+```bash
+cd robot
+./gradlew simulateJava
+```
 
-`/3544/Robot/Pose`
-`/3544/Robot/Mode`
-`/3544/Robot/Enabled`
-`/3544/Robot/BatteryVoltage`
-`/3544/Power/TotalCurrent`
-`/3544/Power/TotalPower`
-`/3544/Power/Channels/0/Current`
-`/3544/Power/Subsystems/Shooter/Current`
-`/3544/Health/Faults`
-`/3544/Health/Warnings`
-`/3544/Health/CAN/Utilization`
-`/3544/Subsystems/Shooter/TopRPM`
-`/3544/Subsystems/Shooter/TargetRPM`
-`/3544/Subsystems/Shooter/Ready`
-`/3544/Tunables/Shooter/kP`
-`/3544/Tunables/Shooter/kV`
-`/3544/Tunables/Shooter/TargetRPM`
-`/3544/Simulation/TurretAngleDeg`
-`/3544/Simulation/DriveMode`
+Terminal 2:
 
-⸻
-
-## Development
-
-# Dashboard
-
-```powershell
+```bash
 cd apps/dashboard
 npm install
 npm run dev
 ```
 
-# Python Apps
+Open the Vite URL printed by `npm run dev`, usually `http://localhost:3000`. The dashboard connects to the NT4 server at `localhost:5810`.
 
-```powershell
-cd apps/robot-health
+### Dashboard (Vite + React)
+
+```bash
+cd apps/dashboard
+npm install
+npm run dev
+```
+
+### Python Apps
+
+All three Python apps follow the same pattern:
+
+```bash
+cd apps/<app-name>   # code-generator | robot-health | subsystem-tuner
 python -m venv .venv
 pip install -r requirements.txt
 python main.py
 ```
 
-# Java Library
+### Java Library
 
-Add packages/3544FRCLib as a local Gradle dependency in your robot project.
+Add `packages/3544FRCLib` as a local Gradle dependency in your robot project:
 
-⸻
+```gradle
+implementation project(':packages:3544FRCLib')
+```
+
+---
+
+## Recommended Workflow (Robot Development Cycle)
+
+1. **Generate** subsystem boilerplate with `apps/code-generator`
+2. **Integrate** the subsystem into robot code using `packages/3544FRCLib`
+3. **Tune** the mechanism live with `apps/subsystem-tuner`
+4. **Validate** the robot before matches with `apps/robot-health`
+5. **Monitor** during driving and testing with `apps/dashboard`
+6. **Replay** match data afterward to diagnose issues
+
+---
+
+## What Is Next
+
+- Extract the app-local field, replay, and power logic into their package directories when those packages need to be consumed outside `apps/dashboard`.
+- Implement full replay recording/export once live dashboard workflows are stable.
+- Build out the Python apps from their current specs.
+- Add automated TypeScript and Java tests once local `node`, `npm`, and a JDK with `javac` are available.
+
+---
+
+## NT Key Conventions
+
+All NetworkTables keys are published under `/3544/` to avoid collisions with WPILib defaults.
+
+```
+/3544/Robot/Pose
+/3544/Robot/Mode
+/3544/Robot/Enabled
+/3544/Robot/BatteryVoltage
+/3544/Power/TotalCurrent
+/3544/Power/TotalPower
+/3544/Power/SubsystemNames
+/3544/Power/Battery/Voltage
+/3544/Power/Battery/TotalCurrent
+/3544/Power/Battery/TotalPower
+/3544/Power/Subsystems/<Subsystem>/Current
+/3544/Power/Subsystems/<Subsystem>/Power
+/3544/Power/Subsystems/<Subsystem>/Energy
+/3544/Health/Faults
+/3544/Health/Warnings
+/3544/Health/CAN/Utilization
+/3544/Health/Status
+/3544/Subsystems/Names
+/3544/Subsystems/Shooter/TopRPM
+/3544/Subsystems/Shooter/TargetRPM
+/3544/Subsystems/Shooter/Ready
+/3544/Tunables/Names
+/3544/Tunables/Shooter/kP
+/3544/Tunables/Shooter/kV
+/3544/Tunables/Shooter/TargetRPM
+/3544/Simulation/TurretAngleDeg
+/3544/Simulation/DriveMode
+/3544/Simulation/IntakeState
+```
+
+---
 
 ## Design Principles
 
-* One source of truth for NT keys
-* Fast robot loops
-* No excessive allocations in periodic methods
-* Live and replay use the same dashboard components
-* All tools should work in real robot and simulation
-* Generated code should be readable and easy to modify manually
-
+- One source of truth for NT keys
+- Fast robot loops — no excessive allocations in periodic methods
+- Live and replay use the same dashboard components
+- All tools work with real robot and simulation
+- Generated code is readable and easy to modify manually

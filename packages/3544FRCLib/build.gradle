@@ -1,0 +1,37 @@
+plugins {
+    id 'java-library'
+}
+
+group = 'com.team3544'
+version = '1.0.0'
+
+// To add WPILib vendordeps, place the vendor JSON files in the vendordeps/ directory
+// and configure the WPILib Gradle plugin (edu.wpi.first.GradleRIO) if building for robot.
+// For a standalone library, add WPILib JARs as Maven dependencies below when published.
+
+java {
+    sourceCompatibility = JavaVersion.VERSION_17
+    targetCompatibility = JavaVersion.VERSION_17
+}
+
+repositories {
+    mavenCentral()
+    // WPILib Maven repository for WPILib JARs
+    maven {
+        url 'https://frcmaven.wpi.edu/artifactory/release'
+    }
+}
+
+dependencies {
+    // WPILib Java libraries
+    implementation 'edu.wpi.first.ntcore:ntcore-java:2024.3.2'
+    implementation 'edu.wpi.first.wpilibj:wpilibj-java:2024.3.2'
+    implementation 'edu.wpi.first.wpiutil:wpiutil-java:2024.3.2'
+    implementation 'edu.wpi.first.hal:hal-java:2024.3.2'
+
+    testImplementation 'org.junit.jupiter:junit-jupiter:5.10.0'
+}
+
+test {
+    useJUnitPlatform()
+}
