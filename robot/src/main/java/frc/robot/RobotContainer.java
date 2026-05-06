@@ -1,84 +1,45 @@
 package frc.robot;
 
-import edu.wpi.first.networktables.NetworkTableInstance;
-import edu.wpi.first.networktables.DoubleArrayPublisher;
-import edu.wpi.first.networktables.DoublePublisher;
-import edu.wpi.first.networktables.StringArrayPublisher;
-import edu.wpi.first.networktables.StringPublisher;
-import edu.wpi.first.wpilibj.RobotController;
-import frc.robot.subsystems.ShooterSubsystem;
+import frc.robot.subsystems.IntakeSubsystem;
+import frc.robot.subsystems.SpindexerHookSubsystem;
+import frc.robot.subsystems.SpindexerFeedSubsystem;
 
+/**
+ * Robot configuration — subsystems, controllers, and command bindings only.
+ * All NT publishing and power monitoring live in DashboardManager.
+ */
 public class RobotContainer {
-    private final ShooterSubsystem shooter = new ShooterSubsystem();
+    private final SpindexerFeedSubsystem spindexerFeed = new SpindexerFeedSubsystem();
+    private final SpindexerHookSubsystem spindexerHook = new SpindexerHookSubsystem();
+    private final IntakeSubsystem intake = new IntakeSubsystem();
+    // ── Subsystems ────────────────────────────────────────────────────────────
 
-    private final DoublePublisher batteryPublisher;
-    private final DoubleArrayPublisher posePublisher;
-    private final StringArrayPublisher subsystemNamesPublisher;
-    private final StringPublisher healthStatusPublisher;
-    private double simTime = 0.0;
+    // ── Dashboard / telemetry ─────────────────────────────────────────────────
+    private final DashboardManager dashboard = new DashboardManager(intake, spindexerHook, spindexerFeed);
 
-    public RobotContainer() {
-        var nt = NetworkTableInstance.getDefault();
-        batteryPublisher = nt.getTable("3544").getSubTable("Robot")
-            .getDoubleTopic("BatteryVoltage").publish();
-        posePublisher = nt.getTable("3544").getSubTable("Robot")
-            .getDoubleArrayTopic("Pose").publish();
-        subsystemNamesPublisher = nt.getTable("3544").getSubTable("Subsystems")
-            .getStringArrayTopic("Names").publish();
-        healthStatusPublisher = nt.getTable("3544").getSubTable("Health")
-            .getStringTopic("Status").publish();
+    public RobotContainer() { 
+        configureBindings();
+    }
 
-        // Register all motors with PowerMonitor — PDH channel assignments
-        PowerMonitor.register("Shooter", "TopMotor",    0);
-        PowerMonitor.register("Shooter", "BottomMotor", 1);
-        PowerMonitor.register("Drive",   "FrontLeft",   2);
-        PowerMonitor.register("Drive",   "FrontRight",  3);
-        PowerMonitor.register("Drive",   "BackLeft",    4);
-        PowerMonitor.register("Drive",   "BackRight",   5);
-        PowerMonitor.register("Intake",  "IntakeMotor", 6);
+    private void configureBindings() {
+        // TODO: bind controller buttons to commands
+        // Example:
+        //   var driver = new XboxController(0);
+        //   new JoystickButton(driver, XboxController.Button.kA.value)
+        //       .onTrue(new InstantCommand(() -> intake.setState("running")))
+        //       .onFalse(new InstantCommand(() -> intake.setState("idle")));
     }
 
     public void periodic() {
-        batteryPublisher.set(RobotController.getBatteryVoltage());
-        shooter.periodic();
-        publishDashboardContract();
-        PowerMonitor.update(0.02);
-    }
-
-    private void publishDashboardContract() {
-        simTime += 0.02;
-        double x = 8.27 + Math.cos(simTime * 0.35) * 3.4;
-        double y = 4.1 + Math.sin(simTime * 0.52) * 1.8;
-        double heading = (simTime * 28.0) % 360.0;
-        posePublisher.set(new double[] { x, y, heading });
-        subsystemNamesPublisher.set(new String[] { "Drive", "Shooter", "Intake" });
-
-        boolean driveReady = true;
-        boolean intakeReady = true;
-        String shooterDetail = String.format("%.0f / %.0f RPM", shooter.getCurrentRpm(), shooter.getTargetRpm());
-        String statusJson = "["
-            + statusJson("Drive", driveReady, "field-relative", "sim pose publishing")
-            + ","
-            + statusJson("Shooter", shooter.isReady(), shooter.getState(), shooterDetail)
-            + ","
-            + statusJson("Intake", intakeReady, "simulated", "cycles stowed/running")
-            + "]";
-        healthStatusPublisher.set(statusJson);
-    }
-
-    private static String statusJson(String name, boolean ready, String state, String detail) {
-        return "{\"name\":\"" + escape(name)
-            + "\",\"ready\":" + ready
-            + ",\"state\":\"" + escape(state)
-            + "\",\"detail\":\"" + escape(detail)
-            + "\"}";
-    }
-
-    private static String escape(String value) {
-        return value.replace("\\", "\\\\").replace("\"", "\\\"");
+        intake.periodic();
+        spindexerHook.periodic();
+        spindexerFeed.periodic();
+        dashboard.periodic();
     }
 
     public void simulationPeriodic() {
-        shooter.simulationPeriodic();
+        spindexerFeed.simulationPeriodic();
+        spindexerHook.simulationPeriodic();
+        intake.simulationPeriodic();
     }
 }
