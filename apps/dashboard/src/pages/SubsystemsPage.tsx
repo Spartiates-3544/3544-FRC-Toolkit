@@ -1,60 +1,72 @@
-import { useNTValue } from '../hooks/useNTValue';
-import { NT_KEYS } from '../nt';
-import { parseJsonArray, type SubsystemStatus } from '../dashboardContract';
-import { Badge, Card, Row, ProgressBar, Grid, Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../components/ui';
+import { formatValue } from '../dashboardContract';
+import { getTopicLeafName, useSubsystemSnapshots } from '../hooks/useSubsystemSnapshots';
+import { Badge, Card, EmptyState, Grid, Row, Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../components/ui';
 
 export default function SubsystemsPage() {
-  const rpm       = useNTValue<number>(NT_KEYS.SHOOTER_RPM, 0);
-  const targetRpm = useNTValue<number>(NT_KEYS.SHOOTER_TARGET, 0);
-  const ready     = useNTValue<boolean>(NT_KEYS.SHOOTER_READY, false);
-  const turret    = useNTValue<number>(NT_KEYS.SIM_TURRET_ANGLE, 0);
-  const driveMode = useNTValue<string>(NT_KEYS.SIM_DRIVE_MODE, '—');
-  const intake    = useNTValue<string>(NT_KEYS.SIM_INTAKE_STATE, 'stowed');
-  const statusJson = useNTValue<string>(NT_KEYS.HEALTH_STATUS, '[]');
-  const statuses = parseJsonArray<SubsystemStatus>(statusJson, []);
-
-  const rpmRatio  = targetRpm > 0 ? rpm / targetRpm : 0;
-  const rpmColor  = ready ? '#22c55e' : rpmRatio > 0.8 ? '#f59e0b' : '#3b82f6';
+  const subsystems = useSubsystemSnapshots();
 
   return (
     <Grid>
-      <Card title="Shooter">
-        <Row label="RPM"        value={rpm.toFixed(0)} color={rpmColor} />
-        <Row label="Target RPM" value={targetRpm.toFixed(0)} />
-        <Row label="Error"      value={`${(targetRpm - rpm).toFixed(0)} RPM`} color={ready ? '#22c55e' : '#f59e0b'} />
-        <Row label="Ready"      value={ready ? 'Yes' : 'No'} color={ready ? '#22c55e' : '#f59e0b'} />
-        <ProgressBar ratio={rpmRatio} color={rpmColor} />
-      </Card>
-
-      <Card title="Drive">
-        <Row label="Drive Mode"   value={driveMode} />
-        <Row label="Turret Angle" value={`${turret.toFixed(1)}°`} />
-        <Row label="Intake" value={intake} />
-      </Card>
+      {subsystems.map(subsystem => (
+        <Card key={subsystem.name} title={subsystem.name}>
+          <Row label="State" value={subsystem.state} />
+          <Row
+            label="Ready"
+            value={subsystem.ready === null ? 'unknown' : subsystem.ready ? 'Yes' : 'No'}
+            tone={subsystem.ready === null ? 'muted' : subsystem.ready ? 'success' : 'destructive'}
+          />
+          <Row label="Fault" value={subsystem.fault || 'none'} tone={subsystem.fault ? 'destructive' : 'success'} />
+          <Row label="Warning" value={subsystem.warning || 'none'} tone={subsystem.warning ? 'warning' : 'success'} />
+          <div className="mt-3 grid gap-1">
+            {subsystem.topics
+              .filter(topic => !['State', 'Ready', 'Fault', 'Warning'].includes(getTopicLeafName(topic.key)))
+              .map(topic => (
+                <div className="flex min-h-8 items-center justify-between gap-3 rounded-md border border-border/50 bg-background/35 px-2.5 py-1 text-sm" key={topic.key}>
+                  <span className="min-w-0 truncate text-muted-foreground">{getTopicLeafName(topic.key)}</span>
+                  {typeof topic.value === 'boolean'
+                    ? <Badge variant={topic.value ? 'success' : 'destructive'}>{formatValue(topic.value)}</Badge>
+                    : <strong className="min-w-0 truncate text-right text-foreground">{formatValue(topic.value)}</strong>}
+                </div>
+              ))}
+          </div>
+        </Card>
+      ))}
 
       <Card title="All Subsystems" wide>
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>Name</TableHead>
-              <TableHead>State</TableHead>
-              <TableHead>Ready</TableHead>
-              <TableHead>Detail</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {statuses.map(status => (
-              <TableRow key={status.name}>
-                <TableCell>{status.name}</TableCell>
-                <TableCell className="ui-table-cell-muted">{status.state}</TableCell>
-                <TableCell>
-                  <Badge variant={status.ready ? 'success' : 'warning'}>{status.ready ? 'Ready' : 'Not ready'}</Badge>
-                </TableCell>
-                <TableCell className="ui-table-cell-muted">{status.detail ?? '—'}</TableCell>
+        {subsystems.length === 0 ? (
+          <EmptyState label="Waiting for subsystem topics">
+            Expected live topics under /3544/Subsystems.
+          </EmptyState>
+        ) : (
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Name</TableHead>
+                <TableHead>State</TableHead>
+                <TableHead>Ready</TableHead>
+                <TableHead>Fault</TableHead>
+                <TableHead>Warning</TableHead>
+                <TableHead>Topics</TableHead>
               </TableRow>
-            ))}
-          </TableBody>
-        </Table>
+            </TableHeader>
+            <TableBody>
+              {subsystems.map(subsystem => (
+                <TableRow key={subsystem.name}>
+                  <TableCell>{subsystem.name}</TableCell>
+                  <TableCell className="text-muted-foreground">{subsystem.state}</TableCell>
+                  <TableCell>
+                    <Badge variant={subsystem.ready ? 'success' : subsystem.ready === false ? 'destructive' : 'muted'}>
+                      {subsystem.ready === null ? 'unknown' : subsystem.ready ? 'Ready' : 'Not ready'}
+                    </Badge>
+                  </TableCell>
+                  <TableCell className="text-muted-foreground">{subsystem.fault || '-'}</TableCell>
+                  <TableCell className="text-muted-foreground">{subsystem.warning || '-'}</TableCell>
+                  <TableCell className="text-muted-foreground">{subsystem.topics.length}</TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        )}
       </Card>
     </Grid>
   );

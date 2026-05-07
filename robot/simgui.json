@@ -1,7 +1,36 @@
 {
+  "HALProvider": {
+    "Other Devices": {
+      "Talon FX (v6)[20]": {
+        "header": {
+          "open": true
+        }
+      },
+      "window": {
+        "visible": false
+      }
+    }
+  },
   "NTProvider": {
     "types": {
-      "/FMSInfo": "FMSInfo"
+      "/FMSInfo": "FMSInfo",
+      "/SmartDashboard/Auto Chooser": "String Chooser",
+      "/SmartDashboard/Field": "Field2d",
+      "/SmartDashboard/PathPlanner": "Alerts",
+      "/SmartDashboard/PhotonAlerts": "Alerts"
+    },
+    "windows": {
+      "/SmartDashboard/Field": {
+        "bottom": 1914,
+        "height": 8.069275856018066,
+        "left": 245,
+        "right": 3942,
+        "top": 118,
+        "width": 16.54119300842285,
+        "window": {
+          "visible": true
+        }
+      }
     }
   },
   "NetworkTables": {
@@ -13,6 +42,32 @@
           },
           "open": true
         },
+        "Power": {
+          "Battery": {
+            "open": true
+          },
+          "Subsystems": {
+            "Intake": {
+              "open": true
+            },
+            "SpindexerFeed": {
+              "open": true
+            },
+            "SpindexerHook": {
+              "open": true
+            },
+            "open": true
+          },
+          "open": true
+        }
+      },
+      "LiveWindow": {
+        "open": true
+      },
+      "PathPlanner": {
+        "open": true
+      },
+      "Shuffleboard": {
         "open": true
       }
     }

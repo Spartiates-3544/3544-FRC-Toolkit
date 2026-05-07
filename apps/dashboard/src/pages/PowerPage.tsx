@@ -7,6 +7,7 @@ import {
   Card,
   EmptyState,
   Row,
+  StatCard,
   Table,
   TableBody,
   TableCell,
@@ -16,9 +17,9 @@ import {
   Tabs,
 } from '../components/ui';
 
-// ── palette ──────────────────────────────────────────────────────────────────
+// ── theme chart colors ───────────────────────────────────────────────────────
 
-const PALETTE = ['#3b82f6', '#22c55e', '#f59e0b', '#ef4444', '#a855f7', '#06b6d4', '#f97316', '#84cc16'];
+const PALETTE = ['var(--chart-1)', 'var(--chart-2)', 'var(--chart-3)', 'var(--chart-4)', 'var(--chart-5)'];
 const color = (i: number) => PALETTE[i % PALETTE.length];
 
 // ── sub-view types ────────────────────────────────────────────────────────────
@@ -61,41 +62,73 @@ function nicePowerScale(maxW: number) {
 
 // ── Summary view ──────────────────────────────────────────────────────────────
 
+type SummaryMode = 'subsystem' | 'motor';
+
+interface SummaryRow {
+  label: string;
+  sublabel?: string;
+  energy: number;
+  power: number;
+  current: number;
+  colorIndex: number;
+}
+
 function SummaryView({ data }: { data: SubsystemPowerData[] }) {
-  const sorted    = [...data].sort((a, b) => b.energy - a.energy);
-  const totalE    = sorted.reduce((s, d) => s + d.energy, 0) || 1;
+  const [mode, setMode] = useState<SummaryMode>('subsystem');
+
+  const rows: SummaryRow[] = mode === 'subsystem'
+    ? data.map((d, i) => ({ label: d.name, energy: d.energy, power: d.power, current: d.current, colorIndex: i }))
+    : data.flatMap((d, subsysIdx) =>
+        d.motorNames.map((motorName, mi) => {
+          const motorCurrent = d.motorCurrents[mi] ?? 0;
+          const share = d.current > 0 ? motorCurrent / d.current : 0;
+          return {
+            label: motorName,
+            sublabel: d.name,
+            energy: d.energy * share,
+            power: d.power * share,
+            current: motorCurrent,
+            colorIndex: subsysIdx * 5 + mi,
+          };
+        })
+      );
+
+  const sorted = [...rows].sort((a, b) => b.energy - a.energy);
+  const totalE = sorted.reduce((s, r) => s + r.energy, 0) || 1;
 
   return (
-    <Card title="Energy Consumption by Subsystem" wide>
+    <Card title="Energy Consumption" wide>
+      <div className="mb-4 flex gap-2">
+        <Button size="sm" variant={mode === 'subsystem' ? 'default' : 'outline'} onClick={() => setMode('subsystem')}>By Subsystem</Button>
+        <Button size="sm" variant={mode === 'motor' ? 'default' : 'outline'} onClick={() => setMode('motor')}>By Motor</Button>
+      </div>
       {sorted.length === 0 ? (
         <EmptyState label="Waiting for subsystem data" />
       ) : (
-        <div className="energy-chart">
-          {sorted.map((d, i) => {
-            const idx = data.findIndex(x => x.name === d.name);
-            const c = color(idx);
-            const share = d.energy / totalE;
+        <div className="grid gap-4">
+          {sorted.map((r) => {
+            const c = color(r.colorIndex);
+            const share = r.energy / totalE;
             return (
-              <div className="energy-row" key={d.name}>
-                <div className="energy-row-main">
-                  <div className="energy-name">
-                    <span className="chart-swatch" style={{ background: c }} />
-                    <span>{d.name}</span>
+              <div className="grid gap-2" key={`${r.sublabel ?? ''}:${r.label}`}>
+                <div className="grid items-center gap-2 md:grid-cols-[minmax(120px,1fr)_auto]">
+                  <div className="flex min-w-0 items-center gap-2">
+                    <span className="size-2.5 shrink-0 rounded-sm" style={{ background: c }} />
+                    <div className="min-w-0">
+                      <span className="block truncate text-sm font-semibold text-foreground">{r.label}</span>
+                      {r.sublabel && <span className="block truncate text-[11px] text-muted-foreground">{r.sublabel}</span>}
+                    </div>
                   </div>
-                  <div className="energy-values">
-                    <span>{fmtEnergy(d.energy)}</span>
-                    <span>{fmtPower(d.power)}</span>
-                    <span>{d.current.toFixed(1)} A</span>
+                  <div className="grid grid-cols-3 gap-3 text-left text-xs text-muted-foreground md:min-w-[250px] md:text-right">
+                    <span className="font-black text-foreground">{fmtEnergy(r.energy)}</span>
+                    <span>{fmtPower(r.power)}</span>
+                    <span>{r.current.toFixed(1)} A</span>
                   </div>
                 </div>
-                <div className="energy-track" aria-label={`${d.name} energy share`}>
+                <div className="h-3.5 overflow-hidden rounded-full border border-border/70 bg-background/70" aria-label={`${r.label} energy share`}>
                   <div
-                    className="energy-fill"
-                    style={{
-                      width: `${Math.max(share * 100, 2)}%`,
-                      color: c,
-                      background: `linear-gradient(90deg, ${c}, color-mix(in srgb, ${c} 58%, white))`,
-                    }}
+                    className="h-full min-w-2 rounded-full shadow-[0_0_18px_currentColor]"
+                    style={{ width: `${Math.max(share * 100, 2)}%`, background: c }}
                   />
                 </div>
               </div>
@@ -175,35 +208,35 @@ function TimelineView({ data }: { data: SubsystemPowerData[] }) {
   const hasLines = data.some(d => (historyRef.current.get(d.name)?.length ?? 0) >= 2);
 
   return (
-    <Card title="Power Over Time (last 30 s)" wide className="timeline-card">
-      <div className="timeline-frame">
-        {!hasLines && <div className="timeline-empty">Collecting samples...</div>}
-        <svg className="timeline-svg" viewBox={`0 0 ${W} ${H}`} role="img" aria-label="Subsystem power over the last 30 seconds">
+    <Card title="Power Over Time (last 30 s)" wide>
+      <div className="relative h-[clamp(300px,45vh,500px)] w-full overflow-hidden rounded-xl border border-border bg-background/70">
+        {!hasLines && <div className="pointer-events-none absolute inset-0 grid place-items-center text-sm text-muted-foreground">Collecting samples...</div>}
+        <svg className="block h-full w-full" viewBox={`0 0 ${W} ${H}`} role="img" aria-label="Subsystem power over the last 30 seconds">
           <defs>
             <linearGradient id="chartFade" x1="0" x2="0" y1="0" y2="1">
-              <stop offset="0%" stopColor="#334155" stopOpacity="0.22" />
-              <stop offset="100%" stopColor="#0f172a" stopOpacity="0" />
+              <stop offset="0%" stopColor="var(--muted)" stopOpacity="0.42" />
+              <stop offset="100%" stopColor="var(--background)" stopOpacity="0" />
             </linearGradient>
           </defs>
           <rect x={padL} y={padT} width={plotW} height={plotH} rx="8" fill="url(#chartFade)" />
           {yLines.map(v => (
             <g key={v}>
-              <line className="timeline-grid-line" x1={padL} y1={toY(v)} x2={W - padR} y2={toY(v)} />
-              <text className="timeline-axis-label" x={padL - 10} y={toY(v) + 4} textAnchor="end">
+              <line className="stroke-[color-mix(in_oklch,var(--border)_74%,transparent)] [stroke-width:1] [vector-effect:non-scaling-stroke]" x1={padL} y1={toY(v)} x2={W - padR} y2={toY(v)} />
+              <text className="fill-muted-foreground text-xs" x={padL - 10} y={toY(v) + 4} textAnchor="end">
                 {fmtPower(v)}
               </text>
             </g>
           ))}
           {[-30, -20, -10, 0].map(s => (
             <g key={s}>
-              <line className="timeline-grid-line timeline-grid-line-vertical" x1={toX(now + s * 1000)} y1={padT} x2={toX(now + s * 1000)} y2={padT + plotH} />
-              <text className="timeline-axis-label" x={toX(now + s * 1000)} y={H - 10} textAnchor="middle">
+              <line className="stroke-[color-mix(in_oklch,var(--border)_74%,transparent)] opacity-70 [stroke-dasharray:4_7] [stroke-width:1] [vector-effect:non-scaling-stroke]" x1={toX(now + s * 1000)} y1={padT} x2={toX(now + s * 1000)} y2={padT + plotH} />
+              <text className="fill-muted-foreground text-xs" x={toX(now + s * 1000)} y={H - 10} textAnchor="middle">
                 {s === 0 ? 'now' : `${s}s`}
               </text>
             </g>
           ))}
-          <line className="timeline-axis" x1={padL} y1={padT + plotH} x2={W - padR} y2={padT + plotH} />
-          <line className="timeline-axis" x1={padL} y1={padT} x2={padL} y2={padT + plotH} />
+          <line className="stroke-border [stroke-width:1.25] [vector-effect:non-scaling-stroke]" x1={padL} y1={padT + plotH} x2={W - padR} y2={padT + plotH} />
+          <line className="stroke-border [stroke-width:1.25] [vector-effect:non-scaling-stroke]" x1={padL} y1={padT} x2={padL} y2={padT + plotH} />
           {data.map((d, i) => {
             const buf = historyRef.current.get(d.name);
             if (!buf || buf.length < 2) return null;
@@ -215,20 +248,20 @@ function TimelineView({ data }: { data: SubsystemPowerData[] }) {
             const latest = buf[buf.length - 1];
             return (
               <g key={d.name}>
-                <path className="timeline-line timeline-line-glow" d={path} fill="none" stroke={color(i)} />
-                <path className="timeline-line" d={path} fill="none" stroke={color(i)} />
-                <circle cx={toX(latest.t)} cy={toY(latest.w)} r="3.5" fill={color(i)} stroke="#0f172a" strokeWidth="2" />
+                <path className="opacity-15 blur-[0.5px] [stroke-linecap:round] [stroke-linejoin:round] [stroke-width:12] [vector-effect:non-scaling-stroke]" d={path} fill="none" stroke={color(i)} />
+                <path className="[stroke-linecap:round] [stroke-linejoin:round] [stroke-width:3] [vector-effect:non-scaling-stroke]" d={path} fill="none" stroke={color(i)} />
+                <circle cx={toX(latest.t)} cy={toY(latest.w)} r="3.5" fill={color(i)} stroke="var(--background)" strokeWidth="2" />
               </g>
             );
           })}
         </svg>
       </div>
-      <div className="chart-legend">
+      <div className="mt-3 flex flex-wrap gap-2">
         {data.map((d, i) => (
-          <div key={d.name} className="chart-legend-item">
-            <div className="chart-swatch" style={{ background: color(i) }} />
+          <div key={d.name} className="flex min-h-7 items-center gap-2 rounded-full border border-border/70 bg-muted/45 px-3 py-1 text-xs text-muted-foreground">
+            <div className="size-2.5 rounded-sm" style={{ background: color(i) }} />
             <span>{d.name}</span>
-            <strong>{fmtPower(historyRef.current.get(d.name)?.at(-1)?.w ?? d.power)}</strong>
+            <strong className="text-xs font-black text-foreground">{fmtPower(historyRef.current.get(d.name)?.at(-1)?.w ?? d.power)}</strong>
           </div>
         ))}
       </div>
@@ -250,21 +283,20 @@ function DetailView({ data, batteryVoltage }: { data: SubsystemPowerData[]; batt
 
   return (
     <div>
-      <div className="button-strip">
+      <div className="mb-4 flex flex-wrap gap-2">
         {data.map((d, i) => (
           <Button
             key={d.name}
             onClick={() => setSelected(d.name)}
             variant={active.name === d.name ? 'default' : 'outline'}
             size="sm"
-            style={active.name === d.name ? { backgroundColor: color(i), borderColor: color(i) } : undefined}
           >
             {d.name}
           </Button>
         ))}
       </div>
 
-      <div className="compact-grid">
+      <div className="mb-4 grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
         <Card title="Subsystem">
           <Row label="Current"        value={`${active.current.toFixed(2)} A`} />
           <Row label="Power"          value={`${active.power.toFixed(1)} W`} />
@@ -290,9 +322,9 @@ function DetailView({ data, batteryVoltage }: { data: SubsystemPowerData[]; batt
               return (
                 <TableRow key={name}>
                   <TableCell>{name}</TableCell>
-                  <TableCell className="ui-table-cell-muted">{amps.toFixed(2)}</TableCell>
-                  <TableCell className="ui-table-cell-muted">{watts.toFixed(1)}</TableCell>
-                  <TableCell className="ui-table-cell-muted">{share}</TableCell>
+                  <TableCell className="text-muted-foreground">{amps.toFixed(2)}</TableCell>
+                  <TableCell className="text-muted-foreground">{watts.toFixed(1)}</TableCell>
+                  <TableCell className="text-muted-foreground">{share}</TableCell>
                 </TableRow>
               );
             })}
@@ -339,30 +371,20 @@ export default function PowerPage() {
         <SubsystemReader key={name} name={name} onData={handleData} />
       ))}
 
-      <div className="stat-strip">
-        <div className="stat-card">
-          <span className="stat-label">Battery</span>
-          <span className="stat-value" style={{ color: batteryVoltage < 11.5 ? '#ef4444' : batteryVoltage < 12.2 ? '#f59e0b' : '#22c55e' }}>
-            {batteryVoltage.toFixed(3)} V
-          </span>
-        </div>
-        <div className="stat-card">
-          <span className="stat-label">Total Current</span>
-          <span className="stat-value">{totalCurrent.toFixed(1)} A</span>
-        </div>
-        <div className="stat-card">
-          <span className="stat-label">Total Power</span>
-          <span className="stat-value">{totalPower.toFixed(0)} W</span>
-        </div>
-        <div className="stat-card">
-          <span className="stat-label">Subsystems</span>
-          <span className="stat-value">{subsystemNames.length}</span>
-        </div>
+      <div className="mb-4 grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        <StatCard
+          label="Battery"
+          value={`${batteryVoltage.toFixed(3)} V`}
+          tone={batteryVoltage < 11.5 ? 'destructive' : batteryVoltage < 12.2 ? 'warning' : 'success'}
+        />
+        <StatCard label="Total Current" value={`${totalCurrent.toFixed(1)} A`} />
+        <StatCard label="Total Power" value={`${totalPower.toFixed(0)} W`} />
+        <StatCard label="Subsystems" value={subsystemNames.length} />
       </div>
 
       <Tabs items={VIEWS} value={view} onValueChange={setView} />
 
-      <div className="tab-content">
+      <div className="mt-4">
         {view === 'summary'  && <SummaryView data={dataList} />}
         {view === 'timeline' && <TimelineView data={dataList} />}
         {view === 'detail'   && <DetailView data={dataList} batteryVoltage={batteryVoltage} />}

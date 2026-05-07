@@ -1,7 +1,8 @@
 package frc.robot.subsystems;
 
 import frc.robot.Constants;
-import frc.robot.SubsystemTelemetry;
+import frc.lib.telemetry.SubsystemTelemetry;
+import frc.lib.monitors.RobotHealthMonitor;
 import edu.wpi.first.wpilibj.RobotBase;
 import com.ctre.phoenix6.hardware.TalonFX;
 import com.ctre.phoenix6.configs.TalonFXConfiguration;
@@ -109,6 +110,16 @@ public class IntakeSubsystem {
 
     public void simulationPeriodic() { /* periodic() handles both real and sim */ }
 
+    public void registerHealthDevices(RobotHealthMonitor health) {
+        health.registerTalonFX(
+            Constants.Intake.SUBSYSTEM_NAME,
+            "LeaderMotor",
+            Constants.Intake.LEADER_MOTOR_CAN_ID,
+            Constants.Intake.CAN_BUS,
+            leaderMotor
+        );
+    }
+
     // ─── Control API ──────────────────────────────────────────────────────────
     /** Set open-loop output (-1 to 1). */
     public void setOutput(double percent) {
@@ -116,6 +127,28 @@ public class IntakeSubsystem {
         if (RobotBase.isReal()) leaderMotor.setControl(dutyCycleRequest.withOutput(outputPercent));
     }
     public double getOutput() { return outputPercent; }
+
+    /** Runs the generated self-test movement. TODO: tune the movement to match real mechanism limits. */
+    public void runSelfTest(double value) {
+        setOutput(value);
+    }
+
+    /** Stops any generated self-test movement. */
+    public void stopSelfTest() {
+        setOutput(0.0);
+    }
+
+    /** Supply current from this subsystem's generated motors (A). */
+    public double getSupplyCurrentA() {
+        if (RobotBase.isReal()) return leaderMotor.getSupplyCurrent().refresh(false).getValueAsDouble();
+        return Math.abs(outputPercent) * 14.0;
+    }
+
+    /** Highest generated motor controller temperature (C). */
+    public double getTemperatureC() {
+        if (RobotBase.isReal()) return leaderMotor.getDeviceTemp().refresh(false).getValueAsDouble();
+        return 25.0;
+    }
 
     // ─── State Machine ───────────────────────────────────────────────────────────
     // Valid states: 'ready', 'running', 'fault'
@@ -129,13 +162,13 @@ public class IntakeSubsystem {
     private void onEnterState(String state) {
         switch (state) {
             case "ready":
-                // TODO: command motors for "ready"
+                // Add state-specific commands for "ready" here.
                 break;
             case "running":
-                // TODO: command motors for "running"
+                // Add state-specific commands for "running" here.
                 break;
             case "fault":
-                // TODO: command motors for "fault"
+                // Add state-specific commands for "fault" here.
                 break;
             default: break;
         }

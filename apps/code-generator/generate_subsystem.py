@@ -17,6 +17,7 @@ SUBSYSTEMS_DIR  = os.path.join(REPO_ROOT, "robot", "src", "main", "java", "frc",
 ROBOT_CONTAINER = os.path.join(REPO_ROOT, "robot", "src", "main", "java", "frc", "robot", "RobotContainer.java")
 DASHBOARD_MANAGER = os.path.join(REPO_ROOT, "robot", "src", "main", "java", "frc", "robot", "DashboardManager.java")
 CONSTANTS_FILE = os.path.join(REPO_ROOT, "robot", "src", "main", "java", "frc", "robot", "Constants.java")
+SELF_TEST_COMMAND = os.path.join(REPO_ROOT, "robot", "src", "main", "java", "frc", "robot", "commands", "SelfTestCommand.java")
 
 # ─── Motor / encoder metadata ─────────────────────────────────────────────────
 
@@ -229,7 +230,8 @@ def gen_subsystem(cfg):
         "package frc.robot.subsystems;",
         "",
         "import frc.robot.Constants;",
-        "import frc.robot.SubsystemTelemetry;",
+        "import frc.lib.telemetry.SubsystemTelemetry;",
+        "import frc.lib.monitors.RobotHealthMonitor;",
         "import edu.wpi.first.wpilibj.RobotBase;",
     ]
     if ctre:
@@ -313,9 +315,17 @@ def gen_subsystem(cfg):
     # ── State fields ───────────────────────────────────────────────────────────
     state_fields = ["    // ─── State ────────────────────────────────────────────────────────────────"]
     if mode == "velocity":
-        state_fields += ["    private double measuredVelocity = 0.0; // RPM", "    private double simVelocity       = 0.0;"]
+        state_fields += [
+            "    private double measuredVelocity = 0.0; // RPM",
+            "    private double targetVelocityRpm = 0.0;",
+            "    private double simVelocity       = 0.0;",
+        ]
     elif mode == "position":
-        state_fields += ["    private double measuredPosition = 0.0; // degrees", "    private double simPosition      = 0.0;"]
+        state_fields += [
+            "    private double measuredPosition = 0.0; // degrees",
+            "    private double targetPositionDeg = 0.0;",
+            "    private double simPosition      = 0.0;",
+        ]
     else:
         state_fields.append("    private double outputPercent = 0.0;")
     state_fields += [
@@ -378,7 +388,7 @@ def gen_subsystem(cfg):
         for fol in followers:
             fv = _camel(fol["name"])
             align = (f"{motor_const(fol, 'INVERTED')} ? "
-                     "MotorAlignmentValue.OpposeMaster : MotorAlignmentValue.Aligned")
+                     "MotorAlignmentValue.Opposed : MotorAlignmentValue.Aligned")
             ctor += [
                 f"        {fv} = {motor_ctor_expr(motor_const(fol, 'CAN_ID'))};",
                 f"        {fv}.setControl(new Follower({motor_const(leader, 'CAN_ID')}, {align}));",
@@ -433,7 +443,8 @@ def gen_subsystem(cfg):
     # ── periodic() ────────────────────────────────────────────────────────────
     periodic = ["    public void periodic() {"]
 
-    tgt_camel = _camel(tgt_key) if tgt_key else ("targetRPM" if mode == "velocity" else "targetDeg")
+    target_field = "targetVelocityRpm" if mode == "velocity" else "targetPositionDeg"
+    tgt_camel = target_field
 
     if tunables:
         periodic.append("        // ── Live tunables ────────────────────────────────────────────────────────")
@@ -453,11 +464,8 @@ def gen_subsystem(cfg):
             if mode == "position" and kd_key: periodic.append(f"        pid.setD({_camel(kd_key)});")
             periodic.append("")
 
-    if mode == "velocity" and not tgt_key:
-        periodic.append("        double targetRPM = 0.0;")
-        periodic.append("")
-    elif mode == "position" and not tgt_key:
-        periodic.append("        double targetDeg = 0.0;")
+    if tgt_key:
+        periodic.append(f"        {target_field} = {_camel(tgt_key)};")
         periodic.append("")
 
     if has_limits and rev and limit_rev.get("enabled") and limit_rev.get("auto_zero"):
@@ -511,6 +519,26 @@ def gen_subsystem(cfg):
         "    public void simulationPeriodic() { /* periodic() handles both real and sim */ }",
     ]
 
+    health = [
+        "",
+        "    public void registerHealthDevices(RobotHealthMonitor health) {",
+    ]
+    if ctre:
+        for motor in motors:
+            mv = _camel(motor["name"])
+            health += [
+                "        health.registerTalonFX(",
+                f"            {const_cls}.SUBSYSTEM_NAME,",
+                f"            \"{motor['name']}\",",
+                f"            {motor_const(motor, 'CAN_ID')},",
+                f"            {const_cls}.CAN_BUS,",
+                f"            {mv}",
+                "        );",
+            ]
+    else:
+        health.append("        // REV device health registration is not supported by RobotHealthMonitor yet.")
+    health.append("    }")
+
     # ── Control API ────────────────────────────────────────────────────────────
     control = ["    // ─── Control API ──────────────────────────────────────────────────────────"]
     if mode == "velocity":
@@ -520,6 +548,7 @@ def gen_subsystem(cfg):
         control += [
             "    /** Command target velocity in RPM. */",
             "    public void setTargetVelocity(double rpm) {",
+            "        targetVelocityRpm = rpm;",
             ctrl_line,
             "    }",
             "    public double getVelocity()       { return measuredVelocity; }",
@@ -531,6 +560,7 @@ def gen_subsystem(cfg):
         control += [
             "    /** Command target position in degrees. */",
             "    public void setTargetPosition(double degrees) {",
+            "        targetPositionDeg = degrees;",
             ctrl_line,
             "    }",
             "    public double getPosition()       { return measuredPosition; }",
@@ -558,6 +588,60 @@ def gen_subsystem(cfg):
             "    public double getOutput() { return outputPercent; }",
         ]
 
+    if mode == "velocity":
+        self_test_command = "        setTargetVelocity(value);"
+        sim_current = f"        return (Math.abs(targetVelocityRpm) / Math.max(1.0, {const_cls}.SELF_TEST_OUTPUT)) * 8.0;"
+    elif mode == "position":
+        self_test_command = "        setTargetPosition(value);"
+        sim_current = f"        return Math.min(12.0, Math.abs(targetPositionDeg - measuredPosition) * 0.5 + 2.0);"
+    else:
+        self_test_command = "        setOutput(value);"
+        sim_current = "        return Math.abs(outputPercent) * 14.0;"
+
+    if ctre:
+        current_terms = " + ".join(f"{_camel(m['name'])}.getSupplyCurrent().refresh(false).getValueAsDouble()" for m in motors)
+        temp_values = [f"{_camel(m['name'])}.getDeviceTemp().refresh(false).getValueAsDouble()" for m in motors]
+        temp_expr = temp_values[0]
+        for value in temp_values[1:]:
+            temp_expr = f"Math.max({temp_expr}, {value})"
+        real_current = f"        if (RobotBase.isReal()) return {current_terms};"
+        real_temp = f"        if (RobotBase.isReal()) return {temp_expr};"
+    else:
+        real_current = f"        if (RobotBase.isReal()) return {leader_var}.getOutputCurrent();"
+        real_temp = f"        if (RobotBase.isReal()) return {leader_var}.getMotorTemperature();"
+
+    control += [
+        "",
+        "    /** Runs the generated self-test movement. TODO: tune the movement to match real mechanism limits. */",
+        "    public void runSelfTest(double value) {",
+        self_test_command,
+        "    }",
+        "",
+        "    /** Stops any generated self-test movement. */",
+        "    public void stopSelfTest() {",
+    ]
+    if mode == "velocity":
+        control.append("        setTargetVelocity(0.0);")
+    elif mode == "position":
+        control.append("        setTargetPosition(measuredPosition);")
+    else:
+        control.append("        setOutput(0.0);")
+    control += [
+        "    }",
+        "",
+        "    /** Supply current from this subsystem's generated motors (A). */",
+        "    public double getSupplyCurrentA() {",
+        real_current,
+        sim_current,
+        "    }",
+        "",
+        "    /** Highest generated motor controller temperature (C). */",
+        "    public double getTemperatureC() {",
+        real_temp,
+        "        return 25.0;",
+        "    }",
+    ]
+
     # ── State machine ──────────────────────────────────────────────────────────
     sm = [
         "",
@@ -574,7 +658,7 @@ def gen_subsystem(cfg):
         "        switch (state) {",
     ]
     for s in states:
-        sm += [f'            case "{s}":', f'                // TODO: command motors for "{s}"', "                break;"]
+        sm += [f'            case "{s}":', f'                // Add state-specific commands for "{s}" here.', "                break;"]
     sm += [
         "            default: break;",
         "        }",
@@ -641,6 +725,7 @@ def gen_subsystem(cfg):
         "",
         "    // ─── Periodic ────────────────────────────────────────────────────────────────",
         *periodic,
+        *health,
         "",
         *control,
         *sm,
@@ -657,6 +742,16 @@ def gen_constants_class(cfg):
     motors = cfg["motors"]
     tunables = cfg.get("tunables", [])
     enc_type = cfg.get("encoder_type", "integrated")
+    mode = cfg.get("mode", "velocity")
+    target_tunable = next((t for t in tunables if any(k in t["key"].lower() for k in ("target", "rpm", "deg", "pos"))), None)
+    if mode == "open_loop":
+        self_test_output = 0.2
+    elif target_tunable:
+        self_test_output = float(target_tunable.get("default", 0.0))
+    elif mode == "velocity":
+        self_test_output = 100.0
+    else:
+        self_test_output = 5.0
 
     lines = [
         f"    // BEGIN 3544-GENERATOR {name}",
@@ -703,6 +798,12 @@ def gen_constants_class(cfg):
 
     state_literals = ", ".join(_java_string(s) for s in cfg.get("states", []))
     lines += [
+        "",
+        "        // Self-test defaults",
+        "        public static final boolean SELF_TEST_ENABLED = true;",
+        f"        public static final double SELF_TEST_OUTPUT = {self_test_output};",
+        "        public static final double SELF_TEST_DURATION_SEC = 1.0;",
+        f"        public static final String SELF_TEST_TODO = {_java_string('TODO: tune this self-test movement for the real ' + name + ' mechanism. The generated default is intentionally gentle.')};",
         "",
         "        // State machine",
         f"        public static final String[] STATES = new String[]{{{state_literals}}};",
@@ -849,6 +950,7 @@ def patch_robot_container(cfg):
         ) if f"{var}.periodic();" not in src else src),
         ("simulation-periodic", lambda src: _append_robot_sim_periodic(src, var)),
         ("dm-arg", lambda src: _append_dashboard_manager_arg(src, var)),
+        ("self-test-arg", lambda src: _append_constructor_arg(src, "new SelfTestCommand", var)),
     ])
 
     dm_changed = False
@@ -863,6 +965,7 @@ def patch_robot_container(cfg):
                 f"        this.{var} = {var};"
             ) if f"this.{var} = {var};" not in src else src),
             ("pdh", lambda src: _append_pdh_registers(src, cfg)),
+            ("health-register", lambda src: _append_health_register(src, name, var)),
             ("names", lambda src: _append_subsystem_name(src, name)),
             ("health", lambda src: _append_health_entry(src, name, var)),
         ])
@@ -874,10 +977,18 @@ def patch_robot_container(cfg):
                     print("  ~ DashboardManager.java already up-to-date")
     else:           print("  ⚠ DashboardManager.java not found — skipped")
 
+    st_changed = False
+    if os.path.exists(SELF_TEST_COMMAND):
+        st_changed = patch_self_test_command(cfg)
+    if st_changed:  print("  ✓ Patched SelfTestCommand.java")
+    elif os.path.exists(SELF_TEST_COMMAND):
+                    print("  ~ SelfTestCommand.java already up-to-date")
+
 def validate_robot_wiring(cfg):
     name = cfg["name"]
     var = _camel(name)
     cls = f"{name}Subsystem"
+    const_cls = f"Constants.{name}"
     errors = []
 
     if os.path.exists(ROBOT_CONTAINER):
@@ -898,15 +1009,27 @@ def validate_robot_wiring(cfg):
             dm = f.read()
         if f"import frc.robot.subsystems.{cls};" not in dm:
             errors.append(f"DashboardManager.java is missing import for {cls}")
-        if f"{cls} {var}" not in dm:
+        if not re.search(rf'\b{re.escape(cls)}\s+{re.escape(var)}\b', dm):
             errors.append(f"DashboardManager.java is missing field or constructor parameter for {var}")
         ctor = re.search(r'public DashboardManager\(([^)]*)\)', dm, re.DOTALL)
         if not ctor or not re.search(rf'\b{re.escape(cls)}\s+{re.escape(var)}\b', ctor.group(1)):
             errors.append(f"DashboardManager constructor is missing parameter {cls} {var}")
-        if f"this.{var} = {var};" not in dm:
+        if not re.search(rf'\bthis\.{re.escape(var)}\s*=\s*{re.escape(var)};', dm):
             errors.append(f"DashboardManager constructor does not assign {var}")
-        if f'entry("{name}", {var}.isReady(), {var}.getState(), "")' not in dm:
+        if f"healthMonitor.updateSubsystem({const_cls}.SUBSYSTEM_NAME" not in dm:
             errors.append(f"DashboardManager health status is missing {name}")
+
+    if os.path.exists(SELF_TEST_COMMAND):
+        with open(SELF_TEST_COMMAND) as f:
+            st = f.read()
+        if f"import frc.robot.subsystems.{cls};" not in st:
+            errors.append(f"SelfTestCommand.java is missing import for {cls}")
+        if not re.search(rf'\b{re.escape(cls)}\s+{re.escape(var)}\b', st):
+            errors.append(f"SelfTestCommand.java is missing field or constructor parameter for {var}")
+        if not re.search(rf'\bthis\.{re.escape(var)}\s*=\s*{re.escape(var)};', st):
+            errors.append(f"SelfTestCommand constructor does not assign {var}")
+        if f'Constants.{name}.SELF_TEST_ENABLED' not in st and not _self_test_has_manual_step(st, name):
+            errors.append(f"SelfTestCommand steps are missing {name}")
 
     if errors:
         raise RuntimeError("\n".join(errors))
@@ -937,12 +1060,43 @@ def _insert_before_pattern(src, pattern, line):
     return src[:m.start()] + line + "\n" + src[m.start():]
 
 def _append_dashboard_manager_arg(src, var):
-    m = re.search(r'(new DashboardManager\([^)]*)\)', src)
-    if not m: return src
-    if var in m.group(0): return src
-    prefix = m.group(1)
+    return _append_constructor_arg(src, "new DashboardManager", var)
+
+def _append_constructor_arg(src, call_name, var):
+    loc = _find_call_span(src, call_name)
+    if not loc: return src
+    start, close = loc
+    call = src[start:close + 1]
+    if re.search(rf'\b{re.escape(var)}\b', call): return src
+    prefix = src[start:close]
     sep = "" if prefix.rstrip().endswith("(") else ", "
-    return src[:m.start(1)] + prefix + f"{sep}{var})" + src[m.end():]
+    return src[:start] + prefix + f"{sep}{var})" + src[close + 1:]
+
+def _find_call_span(src, call_name):
+    start = src.find(call_name + "(")
+    if start == -1:
+        return None
+    depth = 0
+    in_string = False
+    escaped = False
+    for i in range(start + len(call_name), len(src)):
+        ch = src[i]
+        if in_string:
+            escaped = (ch == "\\" and not escaped)
+            if ch == '"' and not escaped:
+                in_string = False
+            elif ch != "\\":
+                escaped = False
+            continue
+        if ch == '"':
+            in_string = True
+        elif ch == "(":
+            depth += 1
+        elif ch == ")":
+            depth -= 1
+            if depth == 0:
+                return start, i
+    return None
 
 def _append_ctor_param(src, name, var):
     cls = f"{name}Subsystem"
@@ -996,21 +1150,268 @@ def _append_pdh_registers(src, cfg):
     p = last[-1].end()
     return src[:p] + "\n" + block + src[p:]
 
+def _append_health_register(src, name, var):
+    line = f"        {var}.registerHealthDevices(healthMonitor);"
+    if line in src:
+        return src
+    matches = list(re.finditer(r'^        \w+\.registerHealthDevices\(healthMonitor\);', src, re.MULTILINE))
+    if matches:
+        p = matches[-1].end()
+        return src[:p] + "\n" + line + src[p:]
+    return _insert_after_pattern(
+        src,
+        r'        // ── Health device registration ─────────────────────────────────────────',
+        line
+    )
+
 def _append_subsystem_name(src, name):
-    m = re.search(r'(subsystemNamesPublisher\.set\(new String\[\]\{)([^}]*)(\}\);)', src)
-    if not m or f'"{name}"' in m.group(2): return src
-    existing = m.group(2).strip()
-    item = f'"{name}"' if not existing else existing.rstrip() + f', "{name}"'
-    return src[:m.start(2)] + item + src[m.end(2):]
+    const_name = f"Constants.{name}.SUBSYSTEM_NAME"
+    m = re.search(r'(subsystemNamesPublisher\.set\(new String\[\]\s*\{)(.*?)(\n\s*\}\);)', src, re.DOTALL)
+    if not m:
+        return src
+    if const_name in m.group(2):
+        return src
+    body = m.group(2).rstrip()
+    comma = "," if body.strip() else ""
+    addition = f"{comma}\n                {const_name}"
+    return src[:m.start(2)] + body + addition + src[m.end(2):]
 
 def _append_health_entry(src, name, var):
-    if f'entry("{name}"' in src: return src
-    new_entry = f'\n                + entry("{name}", {var}.isReady(), {var}.getState(), "")'
-    if re.search(r'entry\("[^"]+"', src):
-        new_entry = f'\n                + ","\n                + entry("{name}", {var}.isReady(), {var}.getState(), "")'
-    m = re.search(r'(\+ "\]";)', src)
+    const_name = f"Constants.{name}.SUBSYSTEM_NAME"
+    if f"healthMonitor.updateSubsystem({const_name}" in src:
+        return src
+    entry = (
+        f"        healthMonitor.updateSubsystem({const_name},\n"
+        f"                {var}.isReady(), {var}.getState(), {var}.getFault(), {var}.getWarning());"
+    )
+    matches = list(re.finditer(r'^\s*healthMonitor\.updateSubsystem\([^;]+;\n?', src, re.MULTILINE))
+    if matches:
+        p = matches[-1].end()
+        return src[:p] + entry + "\n" + src[p:]
+    return _insert_before_pattern(src, r'    \}', entry)
+
+def patch_self_test_command(cfg):
+    name = cfg["name"]
+    var = _camel(name)
+    cls = f"{name}Subsystem"
+    const_cls = f"Constants.{name}"
+
+    return _patch_file(SELF_TEST_COMMAND, [
+        ("import", lambda src: _insert_after_last_import(
+            src, f"import frc.robot.subsystems.{cls};")),
+        ("field", lambda src: _append_self_test_field(src, name, var)),
+        ("ctor-param", lambda src: _append_ctor_param_for_class(src, "SelfTestCommand", cls, var)),
+        ("ctor-assign", lambda src: _append_self_test_assignment(src, var)),
+        ("steps", lambda src: _append_self_test_steps(src, name)),
+        ("stop", lambda src: _append_switchless_line(src, "private void stopAllMotors()", f"        {var}.stopSelfTest();")),
+        ("command", lambda src: _append_switch_case(src, "private void commandMotor", name, f"                {var}.runSelfTest(value);")),
+        ("current", lambda src: _append_switch_case(src, "private double getSubsystemCurrent", name, f"                return {var}.getSupplyCurrentA();")),
+        ("temp", lambda src: _append_switch_case(src, "private double getSubsystemTemp", name, f"                return {var}.getTemperatureC();")),
+    ])
+
+def _append_self_test_field(src, name, var):
+    if re.search(rf'\b{name}Subsystem\s+{re.escape(var)};', src):
+        return src
+    field = f"    private final {name}Subsystem {var};"
+    matches = list(re.finditer(r'^    private final \w+Subsystem \w+;', src, re.MULTILINE))
+    if matches:
+        p = matches[-1].end()
+        return src[:p] + "\n" + field + src[p:]
+    return _insert_after_pattern(src, r'    // ── Subsystems & services ─────────────────────────────────────────────────', field)
+
+def _append_ctor_param_for_class(src, ctor_name, cls, var):
+    m = re.search(rf'(public {re.escape(ctor_name)}\([^)]*)\)', src, re.DOTALL)
     if not m: return src
-    return src[:m.start()] + new_entry + "\n                " + src[m.start():]
+    if re.search(rf'\b{re.escape(cls)}\s+{re.escape(var)}\b', m.group(0), re.DOTALL):
+        return src
+    prefix = m.group(1)
+    sep = "" if prefix.rstrip().endswith("(") else ",\n            "
+    return src[:m.start(1)] + prefix + f"{sep}{cls} {var}" + ")" + src[m.end():]
+
+def _append_self_test_assignment(src, var):
+    if re.search(rf'\bthis\.{re.escape(var)}\s*=\s*{re.escape(var)};', src):
+        return src
+    line = f"        this.{var} = {var};"
+    m = re.search(r'(\n\s*addRequirements\()', src)
+    if m:
+        return src[:m.start()] + "\n" + line + src[m.start():]
+    matches = list(re.finditer(r'^        this\.\w+\s*=\s*\w+;\n?', src, re.MULTILINE))
+    if matches:
+        p = matches[-1].end()
+        return src[:p] + line + "\n" + src[p:]
+    return src
+
+def _append_self_test_steps(src, name):
+    marker = f"Constants.{name}.SELF_TEST_ENABLED"
+    if marker in src:
+        return src
+    if _self_test_has_manual_step(src, name):
+        return src
+    block = (
+        f"        // Generated {name} self-test. TODO: replace the generated movement with the real mechanism-safe action.\n"
+        f"        if ({marker}) {{\n"
+        f"            stepDefs.add(new StepDef(\"{_const_ident(name).lower()}_run\", \"{name}: Generated Movement\",\n"
+        f"                    {const_step_desc(name)},\n"
+        f"                    StepType.MOTOR_RUN, \"{name}\",\n"
+        f"                    Constants.{name}.SELF_TEST_OUTPUT, Constants.{name}.SELF_TEST_DURATION_SEC, \"\"));\n"
+        f"            stepDefs.add(new StepDef(\"{_const_ident(name).lower()}_stop\", \"{name}: Stop\",\n"
+        f"                    \"Stop generated self-test movement and settle\",\n"
+        f"                    StepType.WAIT, \"{name}\", 0, Constants.SelfTest.COAST_DOWN_SEC, \"\"));\n"
+        f"        }}\n"
+    )
+    m = re.search(r'        // 5\. Post-run temperature snapshot', src)
+    if m:
+        return src[:m.start()] + block + "\n" + src[m.start():]
+    return _insert_before_pattern(src, r'        // 6\. Gyro check', block)
+
+def _self_test_has_manual_step(src, name):
+    generated = re.search(rf'// Generated {re.escape(name)} self-test\..*?Constants\.{re.escape(name)}\.SELF_TEST_ENABLED', src, re.DOTALL)
+    if generated:
+        return False
+    return re.search(rf'StepType\.MOTOR_RUN,\s*"{re.escape(name)}"', src) is not None
+
+def const_step_desc(name):
+    return (f"String.format(\"Generated default: %s Run %.2f for %.1f s\", "
+            f"Constants.{name}.SELF_TEST_TODO, Constants.{name}.SELF_TEST_OUTPUT, Constants.{name}.SELF_TEST_DURATION_SEC)")
+
+def _append_switchless_line(src, method_signature, line):
+    if line in src:
+        return src
+    m = re.search(rf'({re.escape(method_signature)}\s*\{{\n)', src)
+    if not m:
+        return src
+    return src[:m.end(1)] + line + "\n" + src[m.end(1):]
+
+def _append_switch_case(src, method_signature, name, action_line):
+    if f'case "{name}":' in _method_body(src, method_signature):
+        return src
+    m = re.search(rf'({re.escape(method_signature)}[^\{{]*\{{.*?switch \(subsystem\) \{{)(.*?)(\n\s*default:)', src, re.DOTALL)
+    if not m:
+        return src
+    block = f'\n            case "{name}":\n{action_line}\n                break;'
+    if action_line.strip().startswith("return "):
+        block = f'\n            case "{name}":\n{action_line}'
+    return src[:m.end(2)] + block + src[m.end(2):]
+
+def _method_body(src, method_signature):
+    m = re.search(rf'{re.escape(method_signature)}.*?\n    \}}', src, re.DOTALL)
+    return m.group(0) if m else ""
+
+def delete_subsystem(target):
+    """Remove a generated subsystem and every wiring block the generator added."""
+    path = target
+    if not path.endswith(".java"):
+        name = target[:-9] if target.lower().endswith("subsystem") else target
+        path = os.path.join(SUBSYSTEMS_DIR, f"{name}Subsystem.java")
+    else:
+        name = os.path.basename(path).replace("Subsystem.java", "")
+
+    cfg = load_subsystem_config(path) if os.path.exists(path) else {"name": name, "motors": []}
+    name = cfg["name"]
+    var = _camel(name)
+    cls = f"{name}Subsystem"
+    const_cls = f"Constants.{name}"
+    changed = []
+
+    if os.path.exists(path):
+        os.remove(path)
+        changed.append(path)
+
+    if os.path.exists(CONSTANTS_FILE):
+        def remove_constants(src):
+            begin = f"    // BEGIN 3544-GENERATOR {name}"
+            end = f"    // END 3544-GENERATOR {name}"
+            return re.sub(r'\n*' + re.escape(begin) + r'.*?' + re.escape(end) + r'\n*', "\n\n", src, flags=re.DOTALL)
+        if _patch_file(CONSTANTS_FILE, [("remove constants", remove_constants)]):
+            changed.append(CONSTANTS_FILE)
+
+    if os.path.exists(ROBOT_CONTAINER):
+        def remove_rc(src):
+            src = re.sub(rf'^import frc\.robot\.subsystems\.{re.escape(cls)};\n', "", src, flags=re.MULTILINE)
+            src = re.sub(rf'^    private final {re.escape(cls)} {re.escape(var)} = new {re.escape(cls)}\(\);\n', "", src, flags=re.MULTILINE)
+            src = re.sub(rf'^        {re.escape(var)}\.periodic\(\);\n', "", src, flags=re.MULTILINE)
+            src = re.sub(rf'^        {re.escape(var)}\.simulationPeriodic\(\);\n', "", src, flags=re.MULTILINE)
+            src = _remove_call_arg(src, "new SelfTestCommand", var)
+            return _remove_call_arg(src, "new DashboardManager", var)
+        if _patch_file(ROBOT_CONTAINER, [("remove robot container wiring", remove_rc)]):
+            changed.append(ROBOT_CONTAINER)
+
+    if os.path.exists(DASHBOARD_MANAGER):
+        def remove_dm(src):
+            src = re.sub(rf'^import frc\.robot\.subsystems\.{re.escape(cls)};\n', "", src, flags=re.MULTILINE)
+            src = re.sub(rf'^    private final {re.escape(cls)}\s+{re.escape(var)};\n', "", src, flags=re.MULTILINE)
+            src = _remove_call_arg(src, "public DashboardManager", var)
+            src = re.sub(rf'^        this\.{re.escape(var)} = {re.escape(var)};\n', "", src, flags=re.MULTILINE)
+            src = re.sub(rf'^        PowerMonitor\.register\({re.escape(const_cls)}\.SUBSYSTEM_NAME, [^;]+;\n', "", src, flags=re.MULTILINE)
+            src = re.sub(rf'^        {re.escape(var)}\.registerHealthDevices\(healthMonitor\);\n', "", src, flags=re.MULTILINE)
+            src = re.sub(rf',?\n\s*{re.escape(const_cls)}\.SUBSYSTEM_NAME', "", src)
+            src = re.sub(rf'\n\s*healthMonitor\.updateSubsystem\({re.escape(const_cls)}\.SUBSYSTEM_NAME,\n\s*{re.escape(var)}\.isReady\(\), {re.escape(var)}\.getState\(\), {re.escape(var)}\.getFault\(\), {re.escape(var)}\.getWarning\(\)\);', "", src)
+            return src
+        if _patch_file(DASHBOARD_MANAGER, [("remove dashboard wiring", remove_dm)]):
+            changed.append(DASHBOARD_MANAGER)
+
+    if os.path.exists(SELF_TEST_COMMAND):
+        def remove_st(src):
+            src = re.sub(rf'^import frc\.robot\.subsystems\.{re.escape(cls)};\n', "", src, flags=re.MULTILINE)
+            src = re.sub(rf'^    private final {re.escape(cls)}\s+{re.escape(var)};\n', "", src, flags=re.MULTILINE)
+            src = _remove_call_arg(src, "public SelfTestCommand", var)
+            src = re.sub(rf'^        this\.{re.escape(var)} = {re.escape(var)};\n', "", src, flags=re.MULTILINE)
+            src = re.sub(rf'\n        // Generated {re.escape(name)} self-test\..*?\n        \}}\n', "\n", src, flags=re.DOTALL)
+            src = re.sub(rf'^        {re.escape(var)}\.stopSelfTest\(\);\n', "", src, flags=re.MULTILINE)
+            src = re.sub(rf'\n            case "{re.escape(name)}":\n\s*{re.escape(var)}\.runSelfTest\(value\);\n\s*break;', "", src)
+            src = re.sub(rf'\n            case "{re.escape(name)}":\n\s*return {re.escape(var)}\.getSupplyCurrentA\(\);', "", src)
+            src = re.sub(rf'\n            case "{re.escape(name)}":\n\s*return {re.escape(var)}\.getTemperatureC\(\);', "", src)
+            return src
+        if _patch_file(SELF_TEST_COMMAND, [("remove self-test wiring", remove_st)]):
+            changed.append(SELF_TEST_COMMAND)
+
+    return changed
+
+def _remove_call_arg(src, call_name, arg_name):
+    loc = _find_call_span(src, call_name)
+    if not loc:
+        return src
+    start, close = loc
+    open_paren = src.find("(", start, close)
+    args_src = src[open_paren + 1:close]
+    if not re.search(rf'\b{re.escape(arg_name)}\b', args_src):
+        return src
+    args = [a for a in _split_java_args(args_src) if not re.search(rf'\b{re.escape(arg_name)}\b', a)]
+    if "\n" in args_src:
+        indent = re.search(r'\n(\s*)', args_src)
+        sep = ",\n" + (indent.group(1) if indent else "                            ")
+        new_args = sep.join(a.strip() for a in args)
+    else:
+        new_args = ", ".join(a.strip() for a in args)
+    return src[:open_paren + 1] + new_args + src[close:]
+
+def _split_java_args(args_src):
+    args = []
+    start = 0
+    depth = 0
+    in_string = False
+    escaped = False
+    for i, ch in enumerate(args_src):
+        if in_string:
+            escaped = (ch == "\\" and not escaped)
+            if ch == '"' and not escaped:
+                in_string = False
+            elif ch != "\\":
+                escaped = False
+            continue
+        if ch == '"':
+            in_string = True
+        elif ch == "(":
+            depth += 1
+        elif ch == ")":
+            depth -= 1
+        elif ch == "," and depth == 0:
+            args.append(args_src[start:i])
+            start = i + 1
+    tail = args_src[start:]
+    if tail.strip():
+        args.append(tail)
+    return args
 
 
 # ─── CLI entry point ──────────────────────────────────────────────────────────

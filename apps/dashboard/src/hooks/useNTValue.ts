@@ -1,29 +1,16 @@
 import { useEffect, useState } from 'react';
-import { NetworkTablesTypeInfos, type NetworkTablesTypeInfo, type NetworkTablesTypes } from 'ntcore-ts-client';
+import type { AnnounceMessageParams } from 'ntcore-ts-client';
 import { nt } from '../nt';
 
-type NTValue = NetworkTablesTypes;
-
-function typeInfoFor(defaultValue: NTValue): NetworkTablesTypeInfo {
-  if (Array.isArray(defaultValue)) {
-    if (defaultValue.length === 0 || typeof defaultValue[0] === 'string')
-      return NetworkTablesTypeInfos.kStringArray;
-    return NetworkTablesTypeInfos.kDoubleArray;
-  }
-  if (typeof defaultValue === 'boolean') return NetworkTablesTypeInfos.kBoolean;
-  if (typeof defaultValue === 'number')  return NetworkTablesTypeInfos.kDouble;
-  return NetworkTablesTypeInfos.kString;
-}
-
-export function useNTValue<T extends NTValue>(key: string, defaultValue: T): T {
+export function useNTValue<T>(key: string, defaultValue: T): T {
   const [value, setValue] = useState<T>(defaultValue);
 
   useEffect(() => {
-    const topic = nt.createTopic<T>(key, typeInfoFor(defaultValue));
-    topic.subscribe((v) => {
-      if (v !== null && v !== undefined) setValue(v as T);
-    });
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    const topic = nt.createPrefixTopic(key);
+    const subuid = topic.subscribe((v: unknown, params: AnnounceMessageParams) => {
+      if (params.name === key && v !== null && v !== undefined) setValue(v as T);
+    }, { all: true, periodic: 0.1 });
+    return () => topic.unsubscribe(subuid);
   }, [key]);
 
   return value;

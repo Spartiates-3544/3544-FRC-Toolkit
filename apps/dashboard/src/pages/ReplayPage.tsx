@@ -32,7 +32,7 @@ export default function ReplayPage() {
   return (
     <div>
       <Card title="Replay Import" wide>
-        <InputRow className="replay-import-row">
+        <InputRow className="items-center max-md:flex-col max-md:items-stretch">
           <Input
             value={raw}
             onChange={event => setRaw(event.target.value)}
@@ -41,23 +41,23 @@ export default function ReplayPage() {
           <Button onClick={() => setTimeline(parseTimeline(raw))}>Load</Button>
         </InputRow>
         {timeline ? (
-          <div className="replay-summary">
+          <div className="mt-3 grid grid-cols-1 gap-x-5 rounded-xl border border-border/70 bg-background/45 px-3 py-2 md:grid-cols-3">
               <Row label="Frames" value={`${timeline.frames.length}`} />
               <Row label="Duration" value={`${(duration / 1000).toFixed(2)} s`} />
               <Row label="Event" value={timeline.metadata?.eventName ?? '—'} />
           </div>
         ) : (
-          <div className="muted-message">Recording/export is intentionally deferred; this importer validates the shared replay shape.</div>
+          <div className="py-3 text-sm text-muted-foreground">Recording/export is intentionally deferred; this importer validates the shared replay shape.</div>
         )}
       </Card>
 
-      <div className="tab-content">
+      <div className="mt-4">
         {!timeline ? (
           <EmptyState label="No replay loaded">Paste a dashboard-core replay timeline JSON to inspect frames.</EmptyState>
         ) : (
           <Card title="Timeline" wide>
             <input
-              className="range-slider"
+              className="mb-4 w-full accent-primary"
               type="range"
               min="0"
               max="1"
@@ -76,9 +76,9 @@ export default function ReplayPage() {
               <TableBody>
                 {visibleFrames.map((frame, index) => (
                   <TableRow key={`${frame.timestamp}-${frame.key}-${index}`}>
-                    <TableCell className="ui-table-cell-muted">{((frame.timestamp - timeline.startTime) / 1000).toFixed(2)} s</TableCell>
+                    <TableCell className="text-muted-foreground">{((frame.timestamp - timeline.startTime) / 1000).toFixed(2)} s</TableCell>
                     <TableCell>{frame.key}</TableCell>
-                    <TableCell className="ui-table-cell-muted">{formatValue(frame.value)}</TableCell>
+                    <TableCell className="text-muted-foreground">{formatValue(frame.value)}</TableCell>
                   </TableRow>
                 ))}
               </TableBody>

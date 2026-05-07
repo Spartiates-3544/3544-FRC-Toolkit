@@ -4,6 +4,7 @@ export const NT_KEYS = {
   ROBOT_MODE: `${NT_ROOT}/Robot/Mode`,
   ROBOT_ENABLED: `${NT_ROOT}/Robot/Enabled`,
   ROBOT_BATTERY: `${NT_ROOT}/Robot/BatteryVoltage`,
+  ROBOT_MATCH_TIME: `${NT_ROOT}/Robot/MatchTime`,
   ROBOT_POSE: `${NT_ROOT}/Robot/Pose`,
 
   POWER_CURRENT: `${NT_ROOT}/Power/TotalCurrent`,
@@ -17,22 +18,44 @@ export const NT_KEYS = {
   HEALTH_WARNINGS: `${NT_ROOT}/Health/Warnings`,
   HEALTH_CAN_UTILIZATION: `${NT_ROOT}/Health/CAN/Utilization`,
   HEALTH_STATUS: `${NT_ROOT}/Health/Status`,
+  HEALTH_SUMMARY: `${NT_ROOT}/Health/Summary`,
+  HEALTH_CAN_BUSES: `${NT_ROOT}/Health/CAN/Buses`,
+  HEALTH_CAN_DEVICES: `${NT_ROOT}/Health/CAN/Devices`,
+  HEALTH_ETHERNET_TARGETS: `${NT_ROOT}/Health/Ethernet/Targets`,
+  HEALTH_ETHERNET_TEST_REQUEST: `${NT_ROOT}/Health/Ethernet/TestRequest`,
+  HEALTH_EVENT_LATEST: `${NT_ROOT}/Health/Events/Latest`,
+  HEALTH_EVENT_SEQ: `${NT_ROOT}/Health/Events/Seq`,
+  HEALTH_RESET_FAULTS: `${NT_ROOT}/Health/CAN/ResetFaults`,
+  HEALTH_RESET_FAULTS_SEQ: `${NT_ROOT}/Health/CAN/ResetFaultsSeq`,
+
+  ROBOT_TEST_RESULTS: `${NT_ROOT}/RobotTest/Results`,
+  ROBOT_TEST_STATE: `${NT_ROOT}/RobotTest/State`,
+  ROBOT_TEST_RUN_REQUEST: `${NT_ROOT}/RobotTest/RunRequest`,
+  ROBOT_TEST_CONFIG: `${NT_ROOT}/RobotTest/Config`,
+
+  SELF_TEST_STATE:           `${NT_ROOT}/SelfTest/State`,
+  SELF_TEST_STEP_INDEX:      `${NT_ROOT}/SelfTest/StepIndex`,
+  SELF_TEST_STEP_COUNT:      `${NT_ROOT}/SelfTest/StepCount`,
+  SELF_TEST_STEP_NAME:       `${NT_ROOT}/SelfTest/StepName`,
+  SELF_TEST_STEP_TYPE:       `${NT_ROOT}/SelfTest/StepType`,
+  SELF_TEST_STEP_STATUS:     `${NT_ROOT}/SelfTest/StepStatus`,
+  SELF_TEST_STEP_DETAIL:     `${NT_ROOT}/SelfTest/StepDetail`,
+  SELF_TEST_TIME_REMAIN:     `${NT_ROOT}/SelfTest/StepTimeRemainSec`,
+  SELF_TEST_LIVE_CURRENT:    `${NT_ROOT}/SelfTest/LiveCurrentA`,
+  SELF_TEST_LIVE_TEMP:       `${NT_ROOT}/SelfTest/LiveTempC`,
+  SELF_TEST_LIVE_BATTERY:    `${NT_ROOT}/SelfTest/LiveBatteryV`,
+  SELF_TEST_PROMPT:          `${NT_ROOT}/SelfTest/PromptText`,
+  SELF_TEST_RESULTS:         `${NT_ROOT}/SelfTest/Results`,
+  SELF_TEST_IS_SIM:          `${NT_ROOT}/SelfTest/IsSimulation`,
+  SELF_TEST_RUN_REQUEST:     `${NT_ROOT}/SelfTest/RunRequest`,
+  SELF_TEST_ABORT_REQUEST:   `${NT_ROOT}/SelfTest/AbortRequest`,
+  SELF_TEST_USER_CONFIRM:    `${NT_ROOT}/SelfTest/UserConfirm`,
+  SELF_TEST_USER_SKIP:       `${NT_ROOT}/SelfTest/UserSkip`,
+  SELF_TEST_USER_FAIL:       `${NT_ROOT}/SelfTest/UserFail`,
 
   SUBSYSTEM_NAMES: `${NT_ROOT}/Subsystems/Names`,
 
   TUNABLE_NAMES: `${NT_ROOT}/Tunables/Names`,
-  TUNABLES_KP: `${NT_ROOT}/Tunables/Shooter/kP`,
-  TUNABLES_KV: `${NT_ROOT}/Tunables/Shooter/kV`,
-  TUNABLES_TARGET_RPM: `${NT_ROOT}/Tunables/Shooter/TargetRPM`,
-
-  SHOOTER_RPM: `${NT_ROOT}/Subsystems/Shooter/TopRPM`,
-  SHOOTER_TARGET: `${NT_ROOT}/Subsystems/Shooter/TargetRPM`,
-  SHOOTER_READY: `${NT_ROOT}/Subsystems/Shooter/Ready`,
-
-  SIM_TURRET_ANGLE: `${NT_ROOT}/Simulation/TurretAngleDeg`,
-  SIM_DRIVE_MODE: `${NT_ROOT}/Simulation/DriveMode`,
-  SIM_ROBOT_PATH: `${NT_ROOT}/Simulation/Path`,
-  SIM_INTAKE_STATE: `${NT_ROOT}/Simulation/IntakeState`,
 } as const;
 
 export type RobotMode = 'disabled' | 'auto' | 'teleop' | 'test';
@@ -48,6 +71,120 @@ export type SubsystemStatus = {
   ready: boolean;
   state: string;
   detail?: string;
+  fault?: string;
+  warning?: string;
+};
+
+export type HealthSummary = {
+  overall: 'healthy' | 'warning' | 'fault' | string;
+  timestampMs: number;
+  batteryVoltage: number;
+  faultCount: number;
+  warningCount: number;
+  subsystemIssueCount: number;
+  canBusCount: number;
+  canBusFaultCount: number;
+  canDeviceCount: number;
+  canDeviceFaultCount: number;
+  ethernetTargetCount: number;
+  ethernetFaultCount: number;
+};
+
+export type HealthCanBus = {
+  name: string;
+  status: string;
+  ok: boolean;
+  fd: boolean;
+  utilization: number;
+  busOffCount: number;
+  txFullCount: number;
+  rec: number;
+  tec: number;
+};
+
+export type HealthCanDevice = {
+  name: string;
+  subsystem: string;
+  type: string;
+  canId: number;
+  bus: string;
+  online: boolean;
+  firmware: string;
+  supplyVoltage: number;
+  temperatureC: number;
+  lastUpdateMs: number;
+  activeFaults: string[];
+  stickyFaults: string[];
+};
+
+export type HealthEthernetTarget = {
+  name: string;
+  role: string;
+  host: string;
+  enabled: boolean;
+  status: 'pending' | 'online' | 'offline' | 'error' | 'disabled' | string;
+  latencyMs: number;
+  lastCheckedMs: number;
+  error: string;
+};
+
+export type HealthEvent = {
+  timestamp: number;
+  level: 'info' | 'warning' | 'error' | string;
+  source: string;
+  category: string;
+  message: string;
+  detail?: string;
+  related?: string;
+};
+
+export type RobotTestCheck = {
+  id: string;
+  label: string;
+  description: string;
+  status: 'pending' | 'running' | 'pass' | 'warning' | 'fail' | 'skipped';
+  detail: string;
+};
+
+export type RobotTestConfig = {
+  batteryWarnV: number;
+  batteryCritV: number;
+  tempWarnC: number;
+  tempFailC: number;
+  currentWarnA: number;
+  currentFailA: number;
+};
+
+export const DEFAULT_TEST_CONFIG: RobotTestConfig = {
+  batteryWarnV: 12.0,
+  batteryCritV: 10.5,
+  tempWarnC: 70,
+  tempFailC: 85,
+  currentWarnA: 120,
+  currentFailA: 200,
+};
+
+export type SavedTestRun = {
+  id: string;
+  timestamp: number;
+  label: string;
+  checks: RobotTestCheck[];
+  config: RobotTestConfig;
+};
+
+export type SelfTestState = 'idle' | 'running' | 'done' | 'aborted' | 'waiting_user' | string;
+
+export type SelfTestStepType =
+  | 'HEALTH_CHECK' | 'MOTOR_RUN' | 'WAIT' | 'GYRO_CHECK' | 'VISION_CHECK' | string;
+
+export type SelfTestResult = {
+  id: string;
+  label: string;
+  description: string;
+  status: 'pending' | 'running' | 'pass' | 'warning' | 'fail' | 'skipped';
+  detail: string;
+  peakCurrentA: number;
+  peakTempC: number;
 };
 
 export type TunableDefinition = {
@@ -87,6 +224,16 @@ export function parseJsonArray<T>(value: string, fallback: T[]): T[] {
   try {
     const parsed = JSON.parse(value);
     return Array.isArray(parsed) ? parsed as T[] : fallback;
+  } catch {
+    return fallback;
+  }
+}
+
+export function parseJsonObject<T>(value: string, fallback: T): T {
+  if (!value.trim()) return fallback;
+  try {
+    const parsed = JSON.parse(value);
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed as T : fallback;
   } catch {
     return fallback;
   }

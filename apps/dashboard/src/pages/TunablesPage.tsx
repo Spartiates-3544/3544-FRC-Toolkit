@@ -39,13 +39,7 @@ function TunableRow({ label, ntKey, step = 0.001 }: { label: string; ntKey: stri
 export default function TunablesPage() {
   const definitionsJson = useNTValue<string>(NT_KEYS.TUNABLE_NAMES, '[]');
   const definitions = parseJsonArray<TunableDefinition>(definitionsJson, []);
-  const fallback: TunableDefinition[] = [
-    { key: NT_KEYS.TUNABLES_KP, label: 'kP', subsystem: 'Shooter', step: 0.0001 },
-    { key: NT_KEYS.TUNABLES_KV, label: 'kV', subsystem: 'Shooter', step: 0.0001 },
-    { key: NT_KEYS.TUNABLES_TARGET_RPM, label: 'Target RPM', subsystem: 'Shooter', step: 100 },
-  ];
-  const tunables = definitions.length ? definitions : fallback;
-  const groups = tunables.reduce<Record<string, TunableDefinition[]>>((acc, item) => {
+  const groups = definitions.reduce<Record<string, TunableDefinition[]>>((acc, item) => {
     acc[item.subsystem] ??= [];
     acc[item.subsystem].push(item);
     return acc;
@@ -60,7 +54,7 @@ export default function TunablesPage() {
           ))}
         </Card>
       ))}
-      {tunables.length === 0 && <EmptyState label="Waiting for tunable metadata" />}
+      {definitions.length === 0 && <EmptyState label="Waiting for tunable metadata" />}
     </Grid>
   );
 }

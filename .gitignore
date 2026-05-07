@@ -118,6 +118,10 @@ temp/
 .cache/
 cache/
 
+.codex/
+.claude/
+.agents/
+
 # Robot deployment artifacts
 *.wpilib.json.bak
 robotCommand

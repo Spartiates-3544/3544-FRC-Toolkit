@@ -18,6 +18,13 @@ export const NT_KEYS = {
   HEALTH_WARNINGS: '/3544/Health/Warnings',
   HEALTH_CAN_UTILIZATION: '/3544/Health/CAN/Utilization',
   HEALTH_STATUS: '/3544/Health/Status',
+  HEALTH_SUMMARY: '/3544/Health/Summary',
+  HEALTH_CAN_BUSES: '/3544/Health/CAN/Buses',
+  HEALTH_CAN_DEVICES: '/3544/Health/CAN/Devices',
+  HEALTH_ETHERNET_TARGETS: '/3544/Health/Ethernet/Targets',
+  HEALTH_ETHERNET_TEST_REQUEST: '/3544/Health/Ethernet/TestRequest',
+  HEALTH_EVENT_LATEST: '/3544/Health/Events/Latest',
+  HEALTH_EVENT_SEQ: '/3544/Health/Events/Seq',
 
   // Subsystems
   SUBSYSTEM_NAMES: '/3544/Subsystems/Names',
@@ -52,6 +59,71 @@ export interface SubsystemStatus {
   ready: boolean;
   state: string;
   detail?: string;
+  fault?: string;
+  warning?: string;
+}
+
+export interface HealthSummary {
+  overall: string;
+  timestampMs: number;
+  batteryVoltage: number;
+  faultCount: number;
+  warningCount: number;
+  subsystemIssueCount: number;
+  canBusCount: number;
+  canBusFaultCount: number;
+  canDeviceCount: number;
+  canDeviceFaultCount: number;
+  ethernetTargetCount: number;
+  ethernetFaultCount: number;
+}
+
+export interface HealthCanBus {
+  name: string;
+  status: string;
+  ok: boolean;
+  fd: boolean;
+  utilization: number;
+  busOffCount: number;
+  txFullCount: number;
+  rec: number;
+  tec: number;
+}
+
+export interface HealthCanDevice {
+  name: string;
+  subsystem: string;
+  type: string;
+  canId: number;
+  bus: string;
+  online: boolean;
+  firmware: string;
+  supplyVoltage: number;
+  temperatureC: number;
+  lastUpdateMs: number;
+  activeFaults: string[];
+  stickyFaults: string[];
+}
+
+export interface HealthEthernetTarget {
+  name: string;
+  role: string;
+  host: string;
+  enabled: boolean;
+  status: string;
+  latencyMs: number;
+  lastCheckedMs: number;
+  error: string;
+}
+
+export interface HealthEvent {
+  timestamp: number;
+  level: string;
+  source: string;
+  category: string;
+  message: string;
+  detail?: string;
+  related?: string;
 }
 
 export interface TunableDefinition {
@@ -80,6 +152,13 @@ export type NTValueTypes = {
   [NT_KEYS.HEALTH_WARNINGS]: string;
   [NT_KEYS.HEALTH_CAN_UTILIZATION]: number;
   [NT_KEYS.HEALTH_STATUS]: string;
+  [NT_KEYS.HEALTH_SUMMARY]: string;
+  [NT_KEYS.HEALTH_CAN_BUSES]: string;
+  [NT_KEYS.HEALTH_CAN_DEVICES]: string;
+  [NT_KEYS.HEALTH_ETHERNET_TARGETS]: string;
+  [NT_KEYS.HEALTH_ETHERNET_TEST_REQUEST]: number;
+  [NT_KEYS.HEALTH_EVENT_LATEST]: string;
+  [NT_KEYS.HEALTH_EVENT_SEQ]: number;
   [NT_KEYS.SUBSYSTEM_NAMES]: string[];
   [NT_KEYS.SUBSYSTEMS_SHOOTER_TOP_RPM]: number;
   [NT_KEYS.SUBSYSTEMS_SHOOTER_TARGET_RPM]: number;

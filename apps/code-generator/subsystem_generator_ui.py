@@ -6,6 +6,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from generate_subsystem import (
     gen_subsystem, patch_robot_container,
     patch_constants, load_subsystem_config, validate_robot_wiring,
+    delete_subsystem,
     SUBSYSTEMS_DIR, ROBOT_CONTAINER,
     MOTOR_TYPES, ENCODER_TYPES, encoder_is_absolute,
 )
@@ -378,6 +379,7 @@ class NavBar(QWidget):
 # ── Home page ─────────────────────────────────────────────────────────────────
 class HomePage(QWidget):
     edit_requested = pyqtSignal(str)
+    delete_requested = pyqtSignal(str)
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -473,6 +475,11 @@ class HomePage(QWidget):
         edit_btn.setToolTip("Load this subsystem back into the generator form.")
         edit_btn.clicked.connect(lambda: self.edit_requested.emit(path))
         fl.addWidget(edit_btn, alignment=Qt.AlignVCenter)
+
+        delete_btn = QPushButton("Delete")
+        delete_btn.setToolTip("Delete this generated subsystem and remove its robot wiring.")
+        delete_btn.clicked.connect(lambda: self.delete_requested.emit(path))
+        fl.addWidget(delete_btn, alignment=Qt.AlignVCenter)
 
         return frame
 
@@ -1099,6 +1106,7 @@ class GeneratorWindow(QMainWindow):
 
         self._nav.page_selected.connect(self._switch_page)
         self._home_page.edit_requested.connect(self._edit_subsystem)
+        self._home_page.delete_requested.connect(self._delete_subsystem)
 
     def _switch_page(self, idx):
         if idx == 0:
@@ -1112,6 +1120,22 @@ class GeneratorWindow(QMainWindow):
             self._nav._select(1)
         except Exception as e:
             QMessageBox.warning(self, "Could not load subsystem", str(e))
+
+    def _delete_subsystem(self, path):
+        name = os.path.basename(path).replace("Subsystem.java", "")
+        if QMessageBox.question(
+            self, "Delete subsystem?",
+            f"Delete {name}Subsystem.java and remove generated constants, RobotContainer wiring, and DashboardManager wiring?",
+            QMessageBox.Yes | QMessageBox.No
+        ) != QMessageBox.Yes:
+            return
+        try:
+            delete_subsystem(path)
+            if self._new_page._editing_path == path:
+                self._new_page.reset_form()
+            self._home_page.refresh()
+        except Exception as e:
+            QMessageBox.warning(self, "Could not delete subsystem", str(e))
 
 
 # ── Entry ─────────────────────────────────────────────────────────────────────

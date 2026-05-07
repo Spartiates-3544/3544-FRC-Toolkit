@@ -1,7 +1,8 @@
 package frc.robot.subsystems;
 
 import frc.robot.Constants;
-import frc.robot.SubsystemTelemetry;
+import frc.lib.telemetry.SubsystemTelemetry;
+import frc.lib.monitors.RobotHealthMonitor;
 import edu.wpi.first.wpilibj.RobotBase;
 import com.ctre.phoenix6.hardware.TalonFX;
 import com.ctre.phoenix6.configs.TalonFXConfiguration;
@@ -90,6 +91,7 @@ public class SpindexerHookSubsystem {
 
     // ─── State ────────────────────────────────────────────────────────────────
     private double measuredVelocity = 0.0; // RPM
+    private double targetVelocityRpm = 0.0;
     private double simVelocity       = 0.0;
     private boolean ready        = false;
     private String  currentState = Constants.SpindexerHook.STATES[0];
@@ -127,29 +129,64 @@ public class SpindexerHookSubsystem {
         slot0.kV = kV;
         leaderMotor.getConfigurator().apply(slot0);
 
+        targetVelocityRpm = targetRPM;
+
         // ── Sensors ──────────────────────────────────────────────────────────────
         if (RobotBase.isReal()) {
             measuredVelocity = leaderMotor.getVelocity().getValueAsDouble() * 60.0;
         } else {
-            double err = targetRPM - simVelocity;
-            simVelocity += err * kP * 50.0 + targetRPM * kV;
+            double err = targetVelocityRpm - simVelocity;
+            simVelocity += err * kP * 50.0 + targetVelocityRpm * kV;
             simVelocity  = Math.max(0, simVelocity);
             measuredVelocity = simVelocity;
         }
-        ready   = Math.abs(targetRPM - measuredVelocity) < 50.0;
-        warning = (Math.abs(targetRPM - measuredVelocity) > 200 && measuredVelocity > 50) ? "SpindexerHook: not at target" : "";
+        ready   = Math.abs(targetVelocityRpm - measuredVelocity) < 50.0;
+        warning = (Math.abs(targetVelocityRpm - measuredVelocity) > 200 && measuredVelocity > 50) ? "SpindexerHook: not at target" : "";
 
-        telemetry.publish(measuredVelocity, targetRPM, ready, currentState, fault, warning);
+        telemetry.publish(measuredVelocity, targetVelocityRpm, ready, currentState, fault, warning);
     }
 
     public void simulationPeriodic() { /* periodic() handles both real and sim */ }
 
+    public void registerHealthDevices(RobotHealthMonitor health) {
+        health.registerTalonFX(
+            Constants.SpindexerHook.SUBSYSTEM_NAME,
+            "LeaderMotor",
+            Constants.SpindexerHook.LEADER_MOTOR_CAN_ID,
+            Constants.SpindexerHook.CAN_BUS,
+            leaderMotor
+        );
+    }
+
     // ─── Control API ──────────────────────────────────────────────────────────
     /** Command target velocity in RPM. */
     public void setTargetVelocity(double rpm) {
+        targetVelocityRpm = rpm;
         if (RobotBase.isReal()) leaderMotor.setControl(velocityRequest.withVelocity(rpm / 60.0));
     }
     public double getVelocity()       { return measuredVelocity; }
+
+    /** Runs the generated self-test movement. TODO: tune the movement to match real mechanism limits. */
+    public void runSelfTest(double value) {
+        setTargetVelocity(value);
+    }
+
+    /** Stops any generated self-test movement. */
+    public void stopSelfTest() {
+        setTargetVelocity(0.0);
+    }
+
+    /** Supply current from this subsystem's generated motors (A). */
+    public double getSupplyCurrentA() {
+        if (RobotBase.isReal()) return leaderMotor.getSupplyCurrent().refresh(false).getValueAsDouble();
+        return (Math.abs(targetVelocityRpm) / Math.max(1.0, Constants.SpindexerHook.SELF_TEST_OUTPUT)) * 8.0;
+    }
+
+    /** Highest generated motor controller temperature (C). */
+    public double getTemperatureC() {
+        if (RobotBase.isReal()) return leaderMotor.getDeviceTemp().refresh(false).getValueAsDouble();
+        return 25.0;
+    }
 
     // ─── State Machine ───────────────────────────────────────────────────────────
     // Valid states: 'ready', 'running', 'unjamming', 'fault'
@@ -163,16 +200,16 @@ public class SpindexerHookSubsystem {
     private void onEnterState(String state) {
         switch (state) {
             case "ready":
-                // TODO: command motors for "ready"
+                // Add state-specific commands for "ready" here.
                 break;
             case "running":
-                // TODO: command motors for "running"
+                // Add state-specific commands for "running" here.
                 break;
             case "unjamming":
-                // TODO: command motors for "unjamming"
+                // Add state-specific commands for "unjamming" here.
                 break;
             case "fault":
-                // TODO: command motors for "fault"
+                // Add state-specific commands for "fault" here.
                 break;
             default: break;
         }
